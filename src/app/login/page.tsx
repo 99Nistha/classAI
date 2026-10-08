@@ -23,41 +23,35 @@ export default function LoginPage() {
     if (mode === 'signin') {
       const { error } = await supabase.auth.signInWithPassword({ email, password })
       setLoading(false)
-      if (error) {
-        setError(error.message)
-      } else {
-        window.location.href = '/'
-      }
+      if (error) setError(error.message)
+      else window.location.href = '/'
     } else {
       const { error } = await supabase.auth.signUp({ email, password })
       setLoading(false)
-      if (error) {
-        setError(error.message)
-      } else {
-        setSignupDone(true)
-      }
+      if (error) setError(error.message)
+      else setSignupDone(true)
     }
   }
 
   if (signupDone) {
     return (
-      <div className="min-h-screen flex items-center justify-center px-4">
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center px-4">
         <div className="w-full max-w-sm text-center">
-          <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-4">
-            <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="w-14 h-14 rounded-2xl bg-emerald-900/40 border border-emerald-700/40 flex items-center justify-center mx-auto mb-5">
+            <svg className="w-7 h-7 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
             </svg>
           </div>
-          <h2 className="text-lg font-bold text-gray-900">Check your email</h2>
-          <p className="mt-2 text-sm text-gray-500">
-            We sent a confirmation link to <strong>{email}</strong>.<br />
-            Click it to activate your account, then come back and sign in.
+          <h2 className="text-xl font-bold text-white">Check your email</h2>
+          <p className="mt-2 text-sm text-slate-400">
+            We sent a confirmation link to <span className="text-slate-200 font-medium">{email}</span>.<br />
+            Click it to activate your account, then sign in.
           </p>
           <button
             onClick={() => { setSignupDone(false); setMode('signin') }}
-            className="mt-6 text-sm text-indigo-600 hover:text-indigo-700 font-medium"
+            className="mt-6 text-sm text-violet-400 hover:text-violet-300 font-medium transition-colors"
           >
-            Back to sign in
+            Back to sign in →
           </button>
         </div>
       </div>
@@ -65,39 +59,85 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4">
-      <div className="w-full max-w-sm">
-        <div className="mb-8 text-center">
-          <h1 className="text-2xl font-bold tracking-tight text-gray-900">ClassAI</h1>
-          <p className="mt-2 text-sm text-gray-500">Visual lessons from your own syllabus</p>
+    <div className="min-h-screen bg-slate-950 flex">
+      {/* Left panel — branding */}
+      <div className="hidden lg:flex flex-col justify-between w-1/2 bg-gradient-to-br from-violet-950 via-indigo-950 to-slate-950 px-12 py-16 border-r border-slate-800">
+        <div>
+          <div className="flex items-center gap-2.5 mb-16">
+            <div className="w-9 h-9 rounded-xl bg-violet-500 flex items-center justify-center">
+              <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+            </div>
+            <span className="text-lg font-bold text-white">ClassAI</span>
+          </div>
+          <h2 className="text-4xl font-extrabold text-white leading-tight">
+            Turn your syllabus into<br />
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-violet-400 to-cyan-400">
+              interactive visuals
+            </span>
+          </h2>
+          <p className="mt-4 text-slate-400 text-lg leading-relaxed">
+            Generate beautiful, animated 3D lessons for your students in seconds — no design skills needed.
+          </p>
         </div>
+        <div className="space-y-4">
+          {[
+            { icon: '⚡', text: 'AI-generated animated diagrams' },
+            { icon: '🎓', text: 'Quiz and step-by-step breakdowns' },
+            { icon: '🔗', text: 'Share with students instantly' },
+          ].map((f) => (
+            <div key={f.text} className="flex items-center gap-3">
+              <span className="text-xl">{f.icon}</span>
+              <span className="text-slate-300 text-sm">{f.text}</span>
+            </div>
+          ))}
+        </div>
+      </div>
 
-        <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
+      {/* Right panel — form */}
+      <div className="flex-1 flex items-center justify-center px-6 py-12">
+        <div className="w-full max-w-sm">
+          {/* Mobile logo */}
+          <div className="lg:hidden flex items-center gap-2.5 mb-10 justify-center">
+            <div className="w-9 h-9 rounded-xl bg-violet-500 flex items-center justify-center">
+              <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+            </div>
+            <span className="text-lg font-bold text-white">ClassAI</span>
+          </div>
+
+          <h1 className="text-2xl font-bold text-white mb-2">
+            {mode === 'signin' ? 'Welcome back' : 'Create your account'}
+          </h1>
+          <p className="text-slate-400 text-sm mb-8">
+            {mode === 'signin'
+              ? 'Sign in to continue to ClassAI'
+              : 'Start generating visual lessons today'}
+          </p>
+
           {/* Tab toggle */}
-          <div className="flex rounded-lg bg-gray-100 p-1 mb-5">
-            <button
-              type="button"
-              onClick={() => { setMode('signin'); setError(null) }}
-              className={`flex-1 rounded-md py-1.5 text-sm font-medium transition-colors ${
-                mode === 'signin' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              Sign in
-            </button>
-            <button
-              type="button"
-              onClick={() => { setMode('signup'); setError(null) }}
-              className={`flex-1 rounded-md py-1.5 text-sm font-medium transition-colors ${
-                mode === 'signup' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              Create account
-            </button>
+          <div className="flex rounded-xl bg-slate-900 border border-slate-800 p-1 mb-6">
+            {(['signin', 'signup'] as Mode[]).map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => { setMode(m); setError(null) }}
+                className={`flex-1 rounded-lg py-2 text-sm font-semibold transition-all ${
+                  mode === m
+                    ? 'bg-violet-600 text-white shadow'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                {m === 'signin' ? 'Sign in' : 'Create account'}
+              </button>
+            ))}
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="email" className="block text-sm font-medium text-slate-300 mb-1.5">
                 Email address
               </label>
               <input
@@ -108,11 +148,11 @@ export default function LoginPage() {
                 required
                 autoFocus
                 placeholder="you@school.edu"
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                className="w-full rounded-xl border border-slate-700 bg-slate-900 px-4 py-2.5 text-sm text-slate-100 placeholder-slate-600 outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 transition-all"
               />
             </div>
             <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="password" className="block text-sm font-medium text-slate-300 mb-1.5">
                 Password
               </label>
               <input
@@ -123,18 +163,29 @@ export default function LoginPage() {
                 required
                 minLength={6}
                 placeholder="••••••••"
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                className="w-full rounded-xl border border-slate-700 bg-slate-900 px-4 py-2.5 text-sm text-slate-100 placeholder-slate-600 outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 transition-all"
               />
             </div>
-            {error && <p className="text-sm text-red-600">{error}</p>}
+
+            {error && (
+              <div className="rounded-xl bg-red-950/50 border border-red-900 px-4 py-3">
+                <p className="text-sm text-red-400">{error}</p>
+              </div>
+            )}
+
             <button
               type="submit"
               disabled={loading}
-              className="w-full rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60 transition-colors"
+              className="w-full rounded-xl bg-violet-600 px-4 py-3 text-sm font-semibold text-white hover:bg-violet-500 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
             >
-              {loading
-                ? mode === 'signin' ? 'Signing in…' : 'Creating account…'
-                : mode === 'signin' ? 'Sign in' : 'Create account'}
+              {loading ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  {mode === 'signin' ? 'Signing in…' : 'Creating account…'}
+                </>
+              ) : (
+                mode === 'signin' ? 'Sign in' : 'Create account'
+              )}
             </button>
           </form>
         </div>

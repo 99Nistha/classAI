@@ -5,14 +5,16 @@ import Link from 'next/link'
 import { archiveClass, deleteClass, updateClass } from '@/lib/queries/classes'
 import type { Class } from '@/types'
 
-const SUBJECT_COLORS: Record<string, string> = {
-  Biology: 'bg-green-100 text-green-700',
-  Chemistry: 'bg-yellow-100 text-yellow-700',
-  Physics: 'bg-blue-100 text-blue-700',
-  Mathematics: 'bg-purple-100 text-purple-700',
-  History: 'bg-orange-100 text-orange-700',
-  Geography: 'bg-teal-100 text-teal-700',
+const SUBJECT_STYLES: Record<string, { from: string; to: string; badge: string; dot: string }> = {
+  Biology:     { from: '#052e16', to: '#14532d', badge: 'bg-emerald-900/60 text-emerald-300 border-emerald-800', dot: 'bg-emerald-400' },
+  Chemistry:   { from: '#1c1917', to: '#292524', badge: 'bg-yellow-900/60 text-yellow-300 border-yellow-800', dot: 'bg-yellow-400' },
+  Physics:     { from: '#0c1a2e', to: '#172554', badge: 'bg-blue-900/60 text-blue-300 border-blue-800', dot: 'bg-blue-400' },
+  Mathematics: { from: '#1e0a4a', to: '#2e1065', badge: 'bg-purple-900/60 text-purple-300 border-purple-800', dot: 'bg-purple-400' },
+  History:     { from: '#1c0a00', to: '#431407', badge: 'bg-orange-900/60 text-orange-300 border-orange-800', dot: 'bg-orange-400' },
+  Geography:   { from: '#042f2e', to: '#134e4a', badge: 'bg-teal-900/60 text-teal-300 border-teal-800', dot: 'bg-teal-400' },
 }
+
+const DEFAULT_STYLE = { from: '#0f172a', to: '#1e293b', badge: 'bg-slate-800 text-slate-300 border-slate-700', dot: 'bg-slate-400' }
 
 interface Props {
   cls: Class
@@ -25,7 +27,7 @@ export default function ClassCard({ cls, onChanged }: Props) {
   const [newName, setNewName] = useState(cls.name)
   const [loading, setLoading] = useState(false)
 
-  const subjectColor = SUBJECT_COLORS[cls.subject] ?? 'bg-gray-100 text-gray-700'
+  const style = SUBJECT_STYLES[cls.subject] ?? DEFAULT_STYLE
 
   async function handleRename(e: React.FormEvent) {
     e.preventDefault()
@@ -51,52 +53,52 @@ export default function ClassCard({ cls, onChanged }: Props) {
   }
 
   return (
-    <div className="relative bg-white rounded-2xl border border-gray-200 p-5 shadow-sm hover:shadow-md transition-shadow">
+    <div className="relative rounded-2xl border border-slate-800 bg-slate-900 overflow-hidden hover:border-slate-700 transition-all hover:-translate-y-0.5 hover:shadow-xl hover:shadow-black/30">
+      {/* Gradient header */}
+      <div
+        className="h-14 w-full"
+        style={{ background: `linear-gradient(135deg, ${style.from}, ${style.to})` }}
+      />
+
       {renaming ? (
-        <form onSubmit={handleRename} className="flex gap-2">
-          <input
-            autoFocus
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            className="flex-1 rounded-lg border border-gray-300 px-3 py-1.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-          />
-          <button
-            type="submit"
-            disabled={loading}
-            className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm text-white disabled:opacity-60"
-          >
-            Save
-          </button>
-          <button
-            type="button"
-            onClick={() => setRenaming(false)}
-            className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-600"
-          >
-            Cancel
-          </button>
-        </form>
+        <div className="px-4 py-4">
+          <form onSubmit={handleRename} className="flex gap-2">
+            <input
+              autoFocus
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              className="flex-1 rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 text-sm text-slate-100 outline-none focus:border-violet-500"
+            />
+            <button type="submit" disabled={loading} className="rounded-lg bg-violet-600 px-3 py-1.5 text-sm text-white disabled:opacity-60">
+              Save
+            </button>
+            <button type="button" onClick={() => setRenaming(false)} className="rounded-lg border border-slate-700 px-3 py-1.5 text-sm text-slate-400">
+              Cancel
+            </button>
+          </form>
+        </div>
       ) : (
-        <>
+        <div className="px-4 py-4">
           <div className="flex items-start justify-between gap-2">
-            <Link href={`/class/${cls.id}`} className="flex-1 min-w-0">
-              <h3 className="font-semibold text-gray-900 truncate hover:text-indigo-600 transition-colors">
+            <Link href={`/class/${cls.id}`} className="flex-1 min-w-0 group">
+              <h3 className="font-bold text-white truncate group-hover:text-violet-300 transition-colors">
                 {cls.name}
               </h3>
-              <p className="mt-1 text-sm text-gray-500">Grade {cls.grade}</p>
+              <p className="text-xs text-slate-500 mt-0.5">Grade {cls.grade}</p>
             </Link>
             <button
               onClick={() => setMenuOpen(!menuOpen)}
-              className="p-1 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100"
-              aria-label="Class options"
+              className="p-1.5 rounded-lg text-slate-600 hover:text-slate-300 hover:bg-slate-800 transition-colors"
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01" />
               </svg>
             </button>
           </div>
 
           <div className="mt-3">
-            <span className={`inline-block text-xs font-medium px-2 py-0.5 rounded-full ${subjectColor}`}>
+            <span className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full border ${style.badge}`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${style.dot}`} />
               {cls.subject}
             </span>
           </div>
@@ -104,29 +106,20 @@ export default function ClassCard({ cls, onChanged }: Props) {
           {menuOpen && (
             <>
               <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
-              <div className="absolute right-3 top-10 z-20 w-40 rounded-xl border border-gray-200 bg-white shadow-lg py-1">
-                <button
-                  onClick={() => { setMenuOpen(false); setRenaming(true) }}
-                  className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
-                >
+              <div className="absolute right-3 top-14 z-20 w-40 rounded-xl border border-slate-700 bg-slate-800 shadow-xl py-1">
+                <button onClick={() => { setMenuOpen(false); setRenaming(true) }} className="w-full text-left px-4 py-2 text-sm text-slate-300 hover:bg-slate-700 hover:text-white transition-colors">
                   Rename
                 </button>
-                <button
-                  onClick={handleArchive}
-                  className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
-                >
+                <button onClick={handleArchive} className="w-full text-left px-4 py-2 text-sm text-slate-300 hover:bg-slate-700 hover:text-white transition-colors">
                   Archive
                 </button>
-                <button
-                  onClick={handleDelete}
-                  className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50"
-                >
+                <button onClick={handleDelete} className="w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-red-950 transition-colors">
                   Delete
                 </button>
               </div>
             </>
           )}
-        </>
+        </div>
       )}
     </div>
   )
