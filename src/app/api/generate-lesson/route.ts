@@ -170,15 +170,23 @@ export async function POST(req: NextRequest) {
         controller.enqueue(encoder.encode(sse(event, data)))
 
       try {
-        // Step 1: research
-        send('status', { message: '🔍 Researching the best approach for this topic…' })
-        const [research, webContext] = await Promise.all([
-          researchTopic(topicTitle, subject, grade),
-          searchWeb(`${topicTitle} ${subject} interactive educational visualization grade ${grade} site:edu OR site:khanacademy.org OR site:phet.colorado.edu`),
-        ])
+        // Step 1: research (skip if teacher gave a specific instruction — trust it directly)
+        let research = ''
+        let webContext = ''
+        if (!teacherInstruction) {
+          send('status', { message: 'Figuring out the best approach for this topic…' })
+          ;[research, webContext] = await Promise.all([
+            researchTopic(topicTitle, subject, grade),
+            searchWeb(`${topicTitle} ${subject} interactive educational visualization grade ${grade}`),
+          ])
+          try {
+            const r = JSON.parse(research)
+            if (r.recommendedTech) send('status', { message: `Using ${r.recommendedTech} for this visual…` })
+          } catch { /* ignore */ }
+        }
 
         // Step 2: generate
-        send('status', { message: '✨ Building your interactive visual…' })
+        send('status', { message: 'Building the interactive visual…' })
         const finalHtml = await generateHtml(
           topicTitle, subject, grade, chapterTitle,
           teacherInstruction, visualStyle, includeQuiz, focusNote,

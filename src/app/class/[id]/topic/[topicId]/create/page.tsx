@@ -14,6 +14,7 @@ interface ChatMsg {
   role: 'user' | 'assistant'
   content: string
   options?: { id: string; label: string; icon: string; description: string }[]
+  isStatus?: boolean   // dim progress messages
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -234,7 +235,10 @@ export default function CreateVisualPage({ params }: Props) {
           let payload: any
           try { payload = JSON.parse(dataLine) } catch { continue }
 
-          if (eventType === 'status') setStatusText(payload.message)
+          if (eventType === 'status') {
+            setStatusText(payload.message)
+            setChatMessages(prev => [...prev, { role: 'assistant', content: payload.message, isStatus: true }])
+          }
           if (eventType === 'html_chunk') { htmlAcc += payload.chunk; setLiveHtml(htmlAcc) }
           if (eventType === 'done') {
             setLessonId(payload.lessonId)
@@ -336,13 +340,20 @@ export default function CreateVisualPage({ params }: Props) {
                 <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                   <div className={`max-w-[88%] ${msg.role === 'user' ? '' : ''}`}>
                     {/* Bubble */}
-                    <div className={`rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed ${
-                      msg.role === 'user'
-                        ? 'bg-violet-600 text-white rounded-br-sm'
-                        : 'bg-slate-800 text-slate-200 rounded-bl-sm'
-                    }`}>
-                      {msg.content}
-                    </div>
+                    {msg.isStatus ? (
+                      <div className="flex items-center gap-2 text-xs text-slate-500 px-1 py-1">
+                        <div className="w-2 h-2 rounded-full bg-violet-600/60 animate-pulse flex-shrink-0" />
+                        {msg.content}
+                      </div>
+                    ) : (
+                      <div className={`rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed ${
+                        msg.role === 'user'
+                          ? 'bg-violet-600 text-white rounded-br-sm'
+                          : 'bg-slate-800 text-slate-200 rounded-bl-sm'
+                      }`}>
+                        {msg.content}
+                      </div>
+                    )}
 
                     {/* Visual style options grid */}
                     {msg.options && (
