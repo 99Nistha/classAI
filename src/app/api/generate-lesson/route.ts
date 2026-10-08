@@ -55,6 +55,14 @@ Return ONLY valid JSON (no fences):
   return raw.replace(/^```[\w]*\s*/i, '').replace(/\s*```\s*$/i, '').trim()
 }
 
+// ── Grade-level language guidance ────────────────────────────────────────────
+function gradeGuidance(grade: number): string {
+  if (grade <= 6) return `Grade 6 (age ~11): Very simple sentences. No jargon — if a technical word is needed, always explain it in plain words right away. Analogies from everyday life (toys, food, sports). Quiz questions test basic recall: "What is...?", "Which of these...?". Keep sentences short.`
+  if (grade <= 8) return `Grade 7–8 (age ~12–14): Clear, straightforward language. Introduce technical terms but briefly explain each one. Relatable analogies. Quiz questions test understanding: "Why does...", "What happens when...". Sentences can be a bit longer but paragraphs stay short.`
+  if (grade <= 10) return `Grade 9–10 (age ~14–16): Can handle subject-specific vocabulary — use correct terms without over-explaining common ones. Some cause-and-effect reasoning. Quiz questions test application: "Which best explains...", "If X happens, what is the result?". Normal paragraph length.`
+  return `Grade 11–12 (age ~16–18): Near pre-university level. Full technical vocabulary expected. Analysis and synthesis questions: "Evaluate...", "Compare and contrast...", "Explain the mechanism by which...". Depth over simplification.`
+}
+
 // ── Step 2: generate the full interactive HTML ────────────────────────────────
 async function generateHtml(
   topic: string, subject: string, grade: number, chapter: string,
@@ -98,10 +106,14 @@ NAVIGATION — always implement all three, no exceptions:
 - For 3D: use OrbitControls with autoRotate: false, enableDamping: true for smoothness
 - Show a one-line hint at the top of the visual: "Scroll to zoom · Drag to pan"
 
+GRADE-LEVEL LANGUAGE (this is critical — every word of text on the page must match):
+${gradeGuidance(grade)}
+
 CONTENT:
 - Main visual section (full width, generous height)
-- Explanation section below the visual
-- 3 interesting facts (click to reveal each)${quiz}
+- Explanation section below the visual — written at Grade ${grade} reading level
+- 3 interesting facts (click to reveal) — surprising, relatable to a ${grade}-year-old
+${quiz}
 - Footer: "Made with ClassAI"
 
 TECHNICAL:
