@@ -1,37 +1,27 @@
 import { NextRequest } from 'next/server'
-import { GoogleGenerativeAI } from '@google/generative-ai'
+import Anthropic from '@anthropic-ai/sdk'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { buildSystemPrompt } from '@/lib/prompts/lesson'
 import { stripCodeFences } from '@/lib/lesson/assembler'
 import { buildStructuredPrompt, assembleHtml, type LessonData } from '@/lib/lesson/sceneEngine'
 
-const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY!)
-
-const MODEL_FALLBACKS = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-flash-latest']
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
 function sse(event: string, data: unknown): string {
   return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`
 }
 
-async function callWithFallback(prompt: string, systemPrompt: string): Promise<string> {
-  let lastError: any
-  for (const modelName of MODEL_FALLBACKS) {
-    try {
-      console.log(`Trying model: ${modelName}`)
-      const model = genAI.getGenerativeModel({
-        model: modelName,
-        systemInstruction: systemPrompt,
-        generationConfig: { responseMimeType: 'application/json' },
-      })
-      const result = await model.generateContent(prompt)
-      return result.response.text()
-    } catch (e: any) {
-      console.error(`Model ${modelName} failed:`, e?.message ?? e)
-      lastError = e
-    }
-  }
-  throw new Error(`All models failed. Last error: ${lastError?.message ?? 'unknown'}`)
+async function callClaude(prompt: string, systemPrompt: string): Promise<string> {
+  const message = await anthropic.messages.create({
+    model: 'claude-haiku-4-5-20251001',
+    max_tokens: 4096,
+    system: systemPrompt,
+    messages: [{ role: 'user', content: prompt }],
+  })
+  const block = message.content[0]
+  if (block.type !== 'text') throw new Error('Unexpected response type from Claude')
+  return block.text
 }
 
 export async function POST(req: NextRequest) {
@@ -92,7 +82,7 @@ export async function POST(req: NextRequest) {
         const systemPrompt = buildSystemPrompt(ctx)
         const structuredPrompt = buildStructuredPrompt(ctx)
 
-        const rawText = await callWithFallback(structuredPrompt, systemPrompt)
+        const rawText = await callClaude(structuredPrompt, systemPrompt)
         const cleaned = stripCodeFences(rawText)
 
         let lessonData: LessonData
