@@ -15,7 +15,7 @@ function sse(event: string, data: unknown): string {
 async function callClaude(prompt: string, systemPrompt: string): Promise<string> {
   const message = await anthropic.messages.create({
     model: 'claude-haiku-4-5-20251001',
-    max_tokens: 4096,
+    max_tokens: 8192,
     system: systemPrompt,
     messages: [{ role: 'user', content: prompt }],
   })
