@@ -10,44 +10,10 @@ interface Props {
   params: Promise<{ id: string; topicId: string }>
 }
 
-interface ChatMessage {
-  role: 'system' | 'assistant'
+interface ChatMsg {
+  role: 'user' | 'assistant'
   content: string
-  type?: 'status' | 'done' | 'error'
-}
-
-// One generation attempt
-interface Session {
-  instruction: string
-  timestamp: number
-  messages: ChatMessage[]
-  status: 'success' | 'error'
-}
-
-// ── localStorage helpers ──────────────────────────────────────────────────────
-function historyKey(topicId: string) { return `classai_history_${topicId}` }
-
-function loadSessions(topicId: string): Session[] {
-  if (typeof window === 'undefined') return []
-  try {
-    const raw = localStorage.getItem(historyKey(topicId))
-    return raw ? (JSON.parse(raw) as Session[]) : []
-  } catch { return [] }
-}
-
-function saveSessions(topicId: string, sessions: Session[]) {
-  try {
-    // Keep last 5
-    localStorage.setItem(historyKey(topicId), JSON.stringify(sessions.slice(-5)))
-  } catch {}
-}
-
-function relativeTime(ts: number): string {
-  const diff = Date.now() - ts
-  if (diff < 60_000) return 'just now'
-  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`
-  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`
-  return new Date(ts).toLocaleDateString()
+  options?: { id: string; label: string; icon: string; description: string }[]
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -59,28 +25,33 @@ export default function CreateVisualPage({ params }: Props) {
   const [chapter, setChapter] = useState<Chapter | null>(null)
   const [cls, setCls] = useState<Class | null>(null)
   const [loading, setLoading] = useState(true)
-  const [hasPrevious, setHasPrevious] = useState(false)
 
-  const [instruction, setInstruction] = useState('')
+  // Chat state
+  const [chatMessages, setChatMessages] = useState<ChatMsg[]>([])
+  const [chatInput, setChatInput] = useState('')
+  const [chatLoading, setChatLoading] = useState(false)
+  const [chatStarted, setChatStarted] = useState(false)
+
+  // Generation params collected through chat
+  const [visualStyle, setVisualStyle] = useState<string | null>(null)
+  const [includeQuiz, setIncludeQuiz] = useState<boolean | null>(null)
+  const [focusNote, setFocusNote] = useState<string | null>(null)
+
+  // Generation state
   const [generating, setGenerating] = useState(false)
-  // Live messages for the CURRENT in-progress generation
-  const [liveMessages, setLiveMessages] = useState<ChatMessage[]>([])
-  // Past sessions loaded from localStorage + newly completed ones
-  const [pastSessions, setPastSessions] = useState<Session[]>([])
-  const [expandedSessions, setExpandedSessions] = useState<Set<number>>(new Set())
-
   const [liveHtml, setLiveHtml] = useState('')
   const [lessonId, setLessonId] = useState<string | null>(null)
   const [shareToken, setShareToken] = useState<string | null>(null)
   const [done, setDone] = useState(false)
   const [isShared, setIsShared] = useState(false)
   const [showShareModal, setShowShareModal] = useState(false)
+  const [statusText, setStatusText] = useState('')
 
   const chatEndRef = useRef<HTMLDivElement>(null)
   const iframeRef = useRef<HTMLIFrameElement>(null)
-  const abortRef = useRef<(() => void) | null>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
 
-  // Load topic + existing lesson + conversation history
+  // ── Load data ───────────────────────────────────────────────────────────────
   useEffect(() => {
     async function load() {
       const supabase = createClient()
@@ -95,7 +66,6 @@ export default function CreateVisualPage({ params }: Props) {
       if (chData) setChapter(chData)
       if (clsData) setCls(clsData)
 
-      // Load existing lesson
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
         const { data: existing } = await supabase
@@ -104,33 +74,41 @@ export default function CreateVisualPage({ params }: Props) {
           .eq('topic_id', topicId)
           .eq('teacher_id', user.id)
           .single()
-
         if (existing?.html_url) {
           setLiveHtml(existing.html_url)
           setLessonId(existing.id)
           setShareToken(existing.share_token)
           setIsShared(existing.status === 'shared')
-          setHasPrevious(true)
           setDone(true)
         }
       }
-
-      // Load conversation history from localStorage
-      const sessions = loadSessions(topicId)
-      setPastSessions(sessions)
-
-      // Pre-fill instruction with last used prompt
-      if (sessions.length > 0) {
-        const last = sessions[sessions.length - 1]
-        if (last.instruction) setInstruction(last.instruction)
-      }
-
       setLoading(false)
     }
     load()
   }, [topicId, classId])
 
-  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [liveMessages])
+  // Start chat with a greeting once we have topic info
+  useEffect(() => {
+    if (chatStarted || !topic || !cls) return
+    setChatStarted(true)
+    const greeting: ChatMsg = {
+      role: 'assistant',
+      content: `Hi! 👋 I'm here to help you create a visual for "${topic.title}". What kind of visual would you like?`,
+      options: [
+        { id: 'anatomy',     label: 'Labeled Diagram',   icon: '🔬', description: 'Realistic illustration with labeled parts' },
+        { id: 'flow',        label: 'Process Flow',       icon: '🔄', description: 'How a process works, step by step' },
+        { id: 'mindmap',     label: 'Mind Map',           icon: '🗺️', description: 'Key ideas branching from the main topic' },
+        { id: 'steps',       label: 'Step-by-Step',       icon: '📋', description: 'Numbered visual walkthrough' },
+        { id: 'timeline',    label: 'Timeline',           icon: '📅', description: 'Events or stages in order' },
+        { id: 'comparison',  label: 'Comparison',         icon: '⚖️', description: 'Side-by-side visual comparison' },
+        { id: 'graph',       label: 'Graph / Chart',      icon: '📊', description: 'Data or relationships plotted visually' },
+        { id: 'infographic', label: 'Infographic',        icon: '🖼️', description: 'Rich visual with icons, facts, and stats' },
+      ],
+    }
+    setChatMessages([greeting])
+  }, [topic, cls, chatStarted])
+
+  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [chatMessages])
 
   useEffect(() => {
     if (iframeRef.current && liveHtml) {
@@ -138,58 +116,101 @@ export default function CreateVisualPage({ params }: Props) {
     }
   }, [liveHtml])
 
-  function addLive(msg: ChatMessage) {
-    setLiveMessages((prev) => [...prev, msg])
-  }
-
-  function toggleSession(i: number) {
-    setExpandedSessions((prev) => {
-      const next = new Set(prev)
-      next.has(i) ? next.delete(i) : next.add(i)
-      return next
-    })
-  }
-
-  async function generate() {
-    if (generating) return
-    const currentInstruction = instruction.trim()
-
-    setGenerating(true)
-    setDone(false)
-    setLiveMessages([])  // reset live panel only — past sessions stay
-
-    let htmlAccumulator = ''
-    const sessionMessages: ChatMessage[] = []
-
-    function addMsg(msg: ChatMessage) {
-      sessionMessages.push(msg)
-      addLive(msg)
-    }
+  // ── Chat send ───────────────────────────────────────────────────────────────
+  async function sendChat(userText: string) {
+    if (!userText.trim() || chatLoading || generating) return
+    const userMsg: ChatMsg = { role: 'user', content: userText }
+    const updated = [...chatMessages, userMsg]
+    setChatMessages(updated)
+    setChatInput('')
+    setChatLoading(true)
 
     try {
-      const response = await fetch('/api/generate-lesson', {
+      const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topicId, teacherInstruction: currentInstruction || undefined }),
+        body: JSON.stringify({
+          messages: updated.map(m => ({ role: m.role, content: m.content })),
+          topicTitle: topic?.title ?? '',
+          subject: cls?.subject ?? '',
+          grade: cls?.grade ?? 9,
+          chapterTitle: chapter?.title ?? '',
+        }),
+      })
+      const data = await res.json()
+
+      const assistantMsg: ChatMsg = {
+        role: 'assistant',
+        content: data.message,
+        options: data.showOptions ? data.options : undefined,
+      }
+      setChatMessages(prev => [...prev, assistantMsg])
+
+      // Update collected params
+      if (data.visualStyle) setVisualStyle(data.visualStyle)
+      if (data.includeQuiz !== null) setIncludeQuiz(data.includeQuiz)
+      if (data.focusNote !== null) setFocusNote(data.focusNote)
+
+      // Trigger generation when chat says ready
+      if (data.readyToGenerate) {
+        await generate(
+          data.visualStyle ?? visualStyle,
+          data.includeQuiz ?? includeQuiz ?? true,
+          data.focusNote ?? focusNote ?? null,
+          userText,
+        )
+      }
+    } catch {
+      setChatMessages(prev => [...prev, { role: 'assistant', content: 'Something went wrong, please try again.' }])
+    } finally {
+      setChatLoading(false)
+    }
+  }
+
+  // ── Option selection ────────────────────────────────────────────────────────
+  function selectOption(option: { id: string; label: string }) {
+    setVisualStyle(option.id)
+    sendChat(`I'd like a ${option.label}`)
+  }
+
+  // ── Generate ────────────────────────────────────────────────────────────────
+  async function generate(
+    style: string | null,
+    quiz: boolean,
+    focus: string | null,
+    instruction: string,
+  ) {
+    if (generating) return
+    setGenerating(true)
+    setDone(false)
+    setStatusText('Creating your visual…')
+
+    try {
+      const res = await fetch('/api/generate-lesson', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          topicId,
+          teacherInstruction: instruction || undefined,
+          visualStyle: style ?? 'flow',
+          includeQuiz: quiz,
+          focusNote: focus ?? undefined,
+        }),
       })
 
-      if (!response.ok || !response.body) {
-        addMsg({ role: 'assistant', content: 'Failed to start generation. Please try again.', type: 'error' })
-        saveSession('error', currentInstruction, sessionMessages)
-        setGenerating(false)
+      if (!res.ok || !res.body) {
+        setChatMessages(prev => [...prev, { role: 'assistant', content: 'Failed to start generation. Please try again.' }])
         return
       }
 
-      const reader = response.body.getReader()
+      const reader = res.body.getReader()
       const decoder = new TextDecoder()
-      abortRef.current = () => reader.cancel()
-
       let buffer = ''
+      let htmlAcc = ''
 
       while (true) {
         const { done: streamDone, value } = await reader.read()
         if (streamDone) break
-
         buffer += decoder.decode(value, { stream: true })
         const parts = buffer.split('\n\n')
         buffer = parts.pop() ?? ''
@@ -206,53 +227,42 @@ export default function CreateVisualPage({ params }: Props) {
           let payload: any
           try { payload = JSON.parse(dataLine) } catch { continue }
 
-          switch (eventType) {
-            case 'status':
-              addMsg({ role: 'system', content: payload.message, type: 'status' })
-              break
-            case 'html_chunk':
-              htmlAccumulator += payload.chunk
-              setLiveHtml(htmlAccumulator)
-              break
-            case 'done':
-              setLessonId(payload.lessonId)
-              setShareToken(payload.shareToken)
-              setDone(true)
-              setHasPrevious(false)
-              addMsg({ role: 'assistant', content: `"${payload.title}" is ready!`, type: 'done' })
-              saveSession('success', currentInstruction, sessionMessages)
-              break
-            case 'error':
-              addMsg({ role: 'assistant', content: `Error: ${payload.message}`, type: 'error' })
-              saveSession('error', currentInstruction, sessionMessages)
-              break
+          if (eventType === 'status') setStatusText(payload.message)
+          if (eventType === 'html_chunk') { htmlAcc += payload.chunk; setLiveHtml(htmlAcc) }
+          if (eventType === 'done') {
+            setLessonId(payload.lessonId)
+            setShareToken(payload.shareToken)
+            setDone(true)
+            setStatusText('')
+            setChatMessages(prev => [...prev, {
+              role: 'assistant',
+              content: `✅ Your visual is ready! You can view it on the right, or share it with your students.`,
+            }])
+          }
+          if (eventType === 'error') {
+            setStatusText('')
+            setChatMessages(prev => [...prev, { role: 'assistant', content: `Error: ${payload.message}` }])
           }
         }
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Something went wrong.'
-      addMsg({ role: 'assistant', content: msg, type: 'error' })
-      saveSession('error', currentInstruction, sessionMessages)
+      setChatMessages(prev => [...prev, { role: 'assistant', content: msg }])
+      setStatusText('')
     } finally {
       setGenerating(false)
-      abortRef.current = null
     }
   }
 
-  function saveSession(status: 'success' | 'error', instr: string, msgs: ChatMessage[]) {
-    const newSession: Session = {
-      instruction: instr,
-      timestamp: Date.now(),
-      messages: msgs,
-      status,
+  // ── Keyboard ────────────────────────────────────────────────────────────────
+  function handleKey(e: React.KeyboardEvent) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      sendChat(chatInput)
     }
-    setPastSessions((prev) => {
-      const updated = [...prev, newSession].slice(-5)
-      saveSessions(topicId, updated)
-      return updated
-    })
-    setLiveMessages([])
   }
+
+  // ─────────────────────────────────────────────────────────────────────────────
 
   if (loading) {
     return (
@@ -273,6 +283,7 @@ export default function CreateVisualPage({ params }: Props) {
   return (
     <>
       <div className="min-h-screen flex flex-col bg-slate-950">
+
         {/* Header */}
         <header className="bg-slate-900 border-b border-slate-800 px-4 py-3 flex-shrink-0">
           <div className="max-w-7xl mx-auto flex items-center gap-3">
@@ -308,147 +319,100 @@ export default function CreateVisualPage({ params }: Props) {
 
         {/* Split layout */}
         <div className="flex-1 flex overflow-hidden" style={{ height: 'calc(100vh - 57px)' }}>
-          {/* Left: Conversation panel */}
-          <div className="w-72 flex-shrink-0 flex flex-col bg-slate-900 border-r border-slate-800">
-            <div className="flex-1 overflow-y-auto px-3 py-3 space-y-2">
 
-              {/* ── Past sessions ── */}
-              {pastSessions.length > 0 && (
-                <div className="space-y-1.5">
-                  {pastSessions.map((s, i) => (
-                    <div key={i} className="rounded-xl border border-slate-800 overflow-hidden">
-                      {/* Session header — always visible */}
-                      <button
-                        onClick={() => toggleSession(i)}
-                        className="w-full flex items-center gap-2 px-3 py-2.5 bg-slate-800/60 hover:bg-slate-800 transition-colors text-left"
-                      >
-                        <span className={`w-2 h-2 rounded-full flex-shrink-0 ${s.status === 'success' ? 'bg-emerald-500' : 'bg-red-500'}`} />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs font-medium text-slate-300 truncate">
-                            {s.instruction || '(no instruction)'}
-                          </p>
-                          <p className="text-xs text-slate-600 mt-0.5">{relativeTime(s.timestamp)}</p>
-                        </div>
-                        <svg className={`w-3.5 h-3.5 text-slate-600 flex-shrink-0 transition-transform ${expandedSessions.has(i) ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                        </svg>
-                      </button>
+          {/* Left: Chat panel */}
+          <div className="w-80 flex-shrink-0 flex flex-col bg-slate-900 border-r border-slate-800">
 
-                      {/* Session messages — shown when expanded */}
-                      {expandedSessions.has(i) && (
-                        <div className="px-3 py-2 space-y-1.5 bg-slate-900/60">
-                          {s.messages.map((msg, mi) => (
-                            <div key={mi}>
-                              {msg.type === 'status' && (
-                                <p className="text-xs text-slate-500">{msg.content}</p>
-                              )}
-                              {msg.type === 'done' && (
-                                <p className="text-xs text-emerald-400 font-medium">{msg.content}</p>
-                              )}
-                              {msg.type === 'error' && (
-                                <p className="text-xs text-red-400">{msg.content}</p>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      )}
+            {/* Messages */}
+            <div className="flex-1 overflow-y-auto px-3 py-4 space-y-3">
+              {chatMessages.map((msg, i) => (
+                <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                  <div className={`max-w-[88%] ${msg.role === 'user' ? '' : ''}`}>
+                    {/* Bubble */}
+                    <div className={`rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed ${
+                      msg.role === 'user'
+                        ? 'bg-violet-600 text-white rounded-br-sm'
+                        : 'bg-slate-800 text-slate-200 rounded-bl-sm'
+                    }`}>
+                      {msg.content}
                     </div>
-                  ))}
 
-                  {/* Separator before current */}
-                  {(generating || liveMessages.length > 0) && (
-                    <div className="flex items-center gap-2 py-1">
-                      <div className="flex-1 h-px bg-slate-800" />
-                      <span className="text-xs text-slate-600 font-medium">New generation</span>
-                      <div className="flex-1 h-px bg-slate-800" />
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* ── Current live messages ── */}
-              {liveMessages.length === 0 && !generating && pastSessions.length === 0 && (
-                <div className="text-center py-10">
-                  <div className="w-12 h-12 rounded-2xl bg-violet-950 flex items-center justify-center mx-auto mb-3">
-                    <svg className="w-6 h-6 text-violet-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                    </svg>
+                    {/* Visual style options grid */}
+                    {msg.options && (
+                      <div className="mt-2 grid grid-cols-2 gap-1.5">
+                        {msg.options.map((opt) => (
+                          <button
+                            key={opt.id}
+                            onClick={() => selectOption(opt)}
+                            disabled={generating || chatLoading}
+                            className={`flex flex-col items-start gap-0.5 rounded-xl border px-2.5 py-2 text-left transition-all hover:border-violet-500 hover:bg-violet-950/40 disabled:opacity-50 ${
+                              visualStyle === opt.id
+                                ? 'border-violet-500 bg-violet-950/40'
+                                : 'border-slate-700 bg-slate-800/60'
+                            }`}
+                          >
+                            <span className="text-base">{opt.icon}</span>
+                            <span className="text-xs font-semibold text-slate-200">{opt.label}</span>
+                            <span className="text-xs text-slate-500 leading-tight">{opt.description}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                  <p className="text-sm font-semibold text-slate-300">Ready to create</p>
-                  <p className="text-xs text-slate-500 mt-1">Describe what you want, then hit Generate</p>
-                </div>
-              )}
-
-              {hasPrevious && liveMessages.length === 0 && !generating && (
-                <div className="rounded-xl bg-emerald-950/60 border border-emerald-900 px-3 py-2.5 flex items-start gap-2">
-                  <svg className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  <div>
-                    <p className="text-xs font-semibold text-emerald-400">Previous visual loaded</p>
-                    <p className="text-xs text-emerald-700 mt-0.5">Edit your prompt and generate to update it</p>
-                  </div>
-                </div>
-              )}
-
-              {liveMessages.map((msg, i) => (
-                <div key={i}>
-                  {msg.type === 'status' && (
-                    <div className="flex items-center gap-2 text-xs text-slate-500">
-                      {generating && <div className="w-3 h-3 border border-slate-500 border-t-transparent rounded-full animate-spin flex-shrink-0" />}
-                      <span>{msg.content}</span>
-                    </div>
-                  )}
-                  {msg.type === 'done' && (
-                    <div className="rounded-xl bg-emerald-950/60 border border-emerald-900 px-3 py-2.5 flex items-center gap-2">
-                      <svg className="w-4 h-4 text-emerald-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                      </svg>
-                      <p className="text-xs text-emerald-300">{msg.content}</p>
-                    </div>
-                  )}
-                  {msg.type === 'error' && (
-                    <div className="rounded-xl bg-red-950/60 border border-red-900 px-3 py-2.5">
-                      <p className="text-xs text-red-300">{msg.content}</p>
-                    </div>
-                  )}
                 </div>
               ))}
+
+              {/* Typing indicator */}
+              {(chatLoading || generating) && (
+                <div className="flex justify-start">
+                  <div className="bg-slate-800 rounded-2xl rounded-bl-sm px-4 py-3 flex items-center gap-1.5">
+                    {[0, 1, 2].map(n => (
+                      <div key={n} className="w-1.5 h-1.5 bg-slate-500 rounded-full animate-bounce" style={{ animationDelay: `${n * 0.15}s` }} />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Status during generation */}
+              {statusText && (
+                <div className="flex items-center gap-2 text-xs text-slate-500 px-1">
+                  <div className="w-3 h-3 border border-violet-500 border-t-transparent rounded-full animate-spin flex-shrink-0" />
+                  {statusText}
+                </div>
+              )}
+
               <div ref={chatEndRef} />
             </div>
 
             {/* Input */}
-            <div className="border-t border-slate-800 p-3 space-y-2.5">
-              <textarea
-                value={instruction}
-                onChange={(e) => setInstruction(e.target.value)}
-                placeholder="Describe what you want, e.g. 'Show the full photosynthesis flow with all stages and labels'"
-                rows={3}
-                disabled={generating}
-                className="w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-xs text-slate-200 placeholder-slate-500 outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500 resize-none disabled:opacity-50 transition-colors"
-              />
-              {generating ? (
+            <div className="border-t border-slate-800 p-3">
+              <div className="flex items-end gap-2">
+                <textarea
+                  ref={inputRef}
+                  value={chatInput}
+                  onChange={e => setChatInput(e.target.value)}
+                  onKeyDown={handleKey}
+                  placeholder="Type a message…"
+                  rows={1}
+                  disabled={generating || chatLoading}
+                  className="flex-1 rounded-xl border border-slate-700 bg-slate-800 px-3 py-2.5 text-sm text-slate-200 placeholder-slate-500 outline-none focus:border-violet-500 resize-none disabled:opacity-50 transition-colors"
+                  style={{ minHeight: 40, maxHeight: 120 }}
+                />
                 <button
-                  onClick={() => { abortRef.current?.(); setGenerating(false) }}
-                  className="w-full rounded-xl border border-red-800 bg-red-950 px-3 py-2 text-xs font-semibold text-red-400 hover:bg-red-900 transition-colors"
+                  onClick={() => sendChat(chatInput)}
+                  disabled={!chatInput.trim() || generating || chatLoading}
+                  className="flex-shrink-0 w-9 h-9 rounded-xl bg-violet-600 flex items-center justify-center hover:bg-violet-500 disabled:opacity-40 transition-colors"
                 >
-                  Stop generating
-                </button>
-              ) : (
-                <button
-                  onClick={generate}
-                  className="w-full rounded-xl bg-violet-600 px-3 py-2 text-xs font-semibold text-white hover:bg-violet-500 flex items-center justify-center gap-1.5 transition-colors"
-                >
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
                   </svg>
-                  {done || hasPrevious ? 'Regenerate' : 'Generate Visual'}
                 </button>
-              )}
+              </div>
+              <p className="text-xs text-slate-600 mt-1.5 px-1">Enter to send · Shift+Enter for new line</p>
             </div>
           </div>
 
-          {/* Right: Preview */}
+          {/* Right: Visual preview */}
           <div className="flex-1 flex flex-col overflow-hidden">
             {liveHtml ? (
               <iframe
@@ -465,8 +429,8 @@ export default function CreateVisualPage({ params }: Props) {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                     </svg>
                   </div>
-                  <p className="text-sm font-medium text-slate-500">Visual will appear here</p>
-                  <p className="text-xs text-slate-600 mt-1">Add an instruction and hit Generate</p>
+                  <p className="text-sm font-medium text-slate-500">Your visual will appear here</p>
+                  <p className="text-xs text-slate-600 mt-1">Chat with ClassAI on the left to get started</p>
                 </div>
               </div>
             )}
@@ -480,7 +444,7 @@ export default function CreateVisualPage({ params }: Props) {
           shareToken={shareToken}
           isShared={isShared}
           onClose={() => setShowShareModal(false)}
-          onStatusChange={(s) => setIsShared(s)}
+          onStatusChange={s => setIsShared(s)}
         />
       )}
     </>

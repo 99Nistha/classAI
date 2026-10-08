@@ -5,129 +5,116 @@ interface LessonContext {
   topicTitle: string
   teacherNotes?: string | null
   teacherInstruction?: string
+  visualStyle?: string
+  includeQuiz?: boolean
+  focusNote?: string
 }
 
 export function buildSystemPrompt(ctx: LessonContext): string {
-  return `You are an educational content expert helping teachers explain "${ctx.topicTitle}" to Grade ${ctx.grade} ${ctx.subject} students.
-
-Your job is to produce data for a clean, interactive flow diagram — the kind you'd see in a well-designed educational app or textbook.
-
-Think naturally about how this topic is best shown visually. What are the key parts, stages, or concepts? How do they connect? Use colours and icons that feel right for the topic — not generic.
-
-Output only valid JSON. No markdown, no explanation, no code fences.`
+  return `You are ClassAI, creating beautiful educational visuals for Grade ${ctx.grade} ${ctx.subject} students.
+Your visuals are realistic and meaningful — like a well-designed textbook or educational website.
+Output only complete self-contained HTML. No explanation, no markdown fences.`
 }
 
-export function buildOutlinePrompt(ctx: LessonContext): string {
-  const notes = ctx.teacherNotes ? `\nTeacher notes: ${ctx.teacherNotes}` : ''
-  const instruction = ctx.teacherInstruction
-    ? `\nTeacher instruction: ${ctx.teacherInstruction}`
+const STYLE_GUIDES: Record<string, string> = {
+  anatomy: `VISUAL: Realistic SVG anatomical illustration.
+Draw the ACTUAL structure — not circles. Use SVG paths/polygons to depict real anatomy:
+- e.g. for the eye: draw the white sclera oval, curved cornea at front, coloured iris ring, black pupil, lens shape, clear vitreous humour, curved retina at back, optic nerve disc
+- Colour each part naturally (retina = pink, iris = blue/hazel, optic nerve = pale yellow, etc.)
+- Thin labelling lines from each part to a side label
+- Clicking a part highlights it and shows a popup with its name + one-sentence function`,
+
+  flow: `VISUAL: Illustrated process-flow diagram.
+Draw MEANINGFUL SHAPES for each stage — NOT abstract circles:
+- Sun: a radiating sun SVG shape ☀
+- Leaf/plant part: an actual leaf silhouette
+- Molecule: interconnected circles like a chemistry bond diagram
+- Cell: an irregular blob with internal shapes
+- Energy: lightning bolt or wave shape
+Connect stages with thick animated arrows. Hovering a stage shows its explanation.
+The overall layout should look like a science textbook flow chart, not a generic node graph.`,
+
+  mindmap: `VISUAL: Visual mind map.
+Central concept in an oval in the middle. 5–8 curved branches radiating outward, each ending in a labelled node.
+Use different colours per branch. Add a small icon/emoji in each branch node.
+Clicking a node expands it to show more detail text.`,
+
+  steps: `VISUAL: Step-by-step illustrated cards.
+Show 4–6 large numbered cards in a vertical sequence.
+Each card has: a number badge, an SVG illustration relevant to that step, a bold step title, and 2 sentences of explanation.
+Include a visual progress bar at the top.`,
+
+  timeline: `VISUAL: Visual timeline.
+Horizontal scrollable timeline with illustrated events/eras.
+Each event has: a date/period, a small SVG icon, a title, and a short description.
+The current event highlights on hover. Navigation arrows to move between events.`,
+
+  comparison: `VISUAL: Side-by-side comparison diagram.
+Two or three columns with clear headers. Each row has an SVG illustration + label on each side.
+Colour-highlight differences. Clicking a row expands to show full comparison details.`,
+
+  graph: `VISUAL: Interactive graph or chart.
+Use Canvas 2D to draw the relevant graph (axes, gridlines, curve/bars/scatter).
+Animate the drawing of the curve. Mouse hover shows a crosshair with x/y values.
+Include a brief explanation of what the shape of the graph means.`,
+
+  infographic: `VISUAL: Rich infographic layout.
+Large SVG illustrations + bold stats + short fact blurbs arranged in a magazine-style layout.
+Use icons, arrows, and colour blocks to organise information visually.
+The most important concept should be the largest element.`,
+}
+
+export function buildVisualPrompt(ctx: LessonContext): string {
+  const style = ctx.visualStyle && STYLE_GUIDES[ctx.visualStyle]
+    ? STYLE_GUIDES[ctx.visualStyle]
+    : STYLE_GUIDES.flow
+
+  const quizSection = ctx.includeQuiz !== false
+    ? `\n5. Mini-quiz: 3 multiple-choice questions with instant answer feedback`
     : ''
 
-  return `Create a lesson plan for:
-Topic: ${ctx.topicTitle}
+  const extras = [
+    ctx.teacherInstruction ? `Teacher's request: "${ctx.teacherInstruction}"` : '',
+    ctx.focusNote ? `Focus on: "${ctx.focusNote}"` : '',
+  ].filter(Boolean).join('\n')
+
+  return `Create a complete interactive HTML lesson page.
+
+Topic: "${ctx.topicTitle}" — ${ctx.subject}, Grade ${ctx.grade}
 Chapter: ${ctx.chapterTitle}
-Subject: ${ctx.subject}, Grade ${ctx.grade}${notes}${instruction}
+${extras}
 
-Return ONLY valid JSON (no markdown fences, no explanation):
-{
-  "title": "lesson page title",
-  "tagline": "one-sentence hook for students",
-  "visual_type": "threejs | svg_diagram | chemistry | physics_math | timeline | vocab | concept_map",
-  "accent_color": "#hexcolor (vivid, subject-appropriate)",
-  "stages": [
-    { "id": 1, "title": "stage title", "description": "what this stage covers (1-2 sentences)", "visual_hint": "specific 3D scene or SVG to create" }
-  ],
-  "quiz": {
-    "description": "what the quiz tests"
-  }
-}`
+${style}
+
+⚠️  DO NOT use generic circles as placeholder nodes. Draw the actual visual representation of the topic.
+
+PAGE SECTIONS:
+1. Main visual (full-width, min 520px tall)
+2. 4-step explanation section with emoji icons
+3. 3 click-to-reveal fun facts${quizSection}
+4. Footer: "Made with ClassAI"
+
+TECHNICAL RULES:
+- Output ONLY complete HTML from <!DOCTYPE html> to </html>
+- Everything inline — CSS and JS inside the file. Only external allowed: Google Fonts <link>
+- Dark theme: background #060a14, cards #0f172a, text #e2e8f0, accent #7c3aed (violet)
+- Font: Inter from Google Fonts
+- Fully responsive (works at 320px width)
+- 100% accurate for Grade ${ctx.grade} ${ctx.subject}`
 }
 
-export function buildStagePrompt(
-  ctx: LessonContext,
-  outline: OutlineJSON,
-  stage: StageOutline,
-  previousHtml: string
-): string {
-  const is3D = outline.visual_type === 'threejs'
+// ── Unused legacy helpers kept for reference ──────────────────────────────────
 
-  return `You are generating stage ${stage.id} of ${outline.stages.length} for a lesson page.
-
-Lesson: "${outline.title}" — ${outline.tagline}
-Visual type: ${outline.visual_type}
-Accent color: ${outline.accent_color}
-Stage: "${stage.title}" — ${stage.description}
-Visual hint: ${stage.visual_hint}
-
-${previousHtml ? `Previously generated HTML (DO NOT repeat, just continue):\n---\n${previousHtml.slice(-400)}\n---\n` : ''}
-
-Output ONLY the HTML for this stage section. Rules:
-- Wrap in <section class="stage" id="stage-${stage.id}">
-- Smooth entrance animation via CSS @keyframes
-- Use CSS variables (--bg, --text, --accent, --card) already in the page
-${is3D ? `- Use Three.js (already loaded in <head>) to create a 3D interactive scene
-- Put the <canvas> in a div with style="position:relative;height:420px;border-radius:16px;overflow:hidden"
-- Add HTML label overlays using position:absolute inside that div
-- Include OrbitControls for drag-to-rotate
-- Add a play/pause button for any animation loop
-- Use good lighting: AmbientLight(0xffffff, 0.6) + DirectionalLight(0xffffff, 0.8)` : `- Use inline SVG or CSS animations (no external images)
-- Be visually rich but load instantly`}`
-}
-
-export function buildQuizPrompt(ctx: LessonContext, outline: OutlineJSON): string {
-  return `Generate the quiz section for the lesson "${outline.title}" about "${ctx.topicTitle}" (grade ${ctx.grade} ${ctx.subject}).
-
-Output ONLY the HTML for the quiz section. Rules:
-- Wrap in <section class="stage quiz-section" id="quiz">
-- 4 multiple-choice questions, 4 options each (A–D)
-- On click: show ✓ green for correct, ✗ red for wrong + a one-line explanation
-- Show final score when all answered
-- Use only inline styles / CSS variables
-- All questions must be factually accurate for grade ${ctx.grade}`
-}
-
-export function buildPageShellPrompt(
-  ctx: LessonContext,
-  outline: OutlineJSON
-): string {
-  const needs3D = outline.visual_type === 'threejs'
-
-  return `Generate the opening HTML shell for a lesson page. Stage content will be injected inside later.
-
-Lesson title: ${outline.title}
-Tagline: ${outline.tagline}
-Subject: ${ctx.subject}, Grade ${ctx.grade}
-Accent color: ${outline.accent_color}
-Visual type: ${outline.visual_type}
-
-Output ONLY the HTML from <!DOCTYPE html> through the opening <main> tag (inclusive). Include:
-- Full <head> with meta tags, Google Fonts (Inter) import
-${needs3D ? `- Three.js CDN: <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-- OrbitControls CDN: <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>` : ''}
-- All CSS in a <style> block with CSS variables: --bg, --text, --accent (=${outline.accent_color}), --card, --muted
-- Dark mode via @media (prefers-color-scheme: dark)
-- Sticky <header> with lesson title and subject badge
-- Fade-in animation for .stage elements (opacity 0→1, translateY 20px→0)
-- Responsive layout (max-width 880px, centered, padding 1.5rem)
-- Opening <main class="lesson-content"> tag — DO NOT close it`
-}
-
-export function buildPageClosePrompt(): string {
-  return `Output ONLY the closing HTML: </main>, then a <footer style="text-align:center;padding:2rem;color:var(--muted);font-size:0.8rem">Made with ClassAI</footer>, then </body></html>. Nothing else.`
-}
+export function buildOutlinePrompt(ctx: LessonContext): string { return '' }
+export function buildStagePrompt(): string { return '' }
+export function buildQuizPrompt(): string { return '' }
+export function buildPageShellPrompt(): string { return '' }
+export function buildPageClosePrompt(): string { return '' }
 
 export interface OutlineJSON {
-  title: string
-  tagline: string
-  visual_type: string
-  accent_color: string
-  stages: StageOutline[]
-  quiz: { description: string }
+  title: string; tagline: string; visual_type: string; accent_color: string
+  stages: StageOutline[]; quiz: { description: string }
 }
-
 export interface StageOutline {
-  id: number
-  title: string
-  description: string
-  visual_hint: string
+  id: number; title: string; description: string; visual_hint: string
 }

@@ -2,9 +2,8 @@ import { NextRequest } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
-import { buildSystemPrompt } from '@/lib/prompts/lesson'
+import { buildSystemPrompt, buildVisualPrompt } from '@/lib/prompts/lesson'
 import { stripCodeFences } from '@/lib/lesson/assembler'
-import { buildStructuredPrompt, assembleHtml, type LessonData } from '@/lib/lesson/sceneEngine'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -12,16 +11,16 @@ function sse(event: string, data: unknown): string {
   return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`
 }
 
-async function callClaude(prompt: string, systemPrompt: string): Promise<string> {
+async function generateHtml(system: string, prompt: string): Promise<string> {
   const message = await anthropic.messages.create({
     model: 'claude-haiku-4-5-20251001',
     max_tokens: 8192,
-    system: systemPrompt,
+    system,
     messages: [{ role: 'user', content: prompt }],
   })
   const block = message.content[0]
   if (block.type !== 'text') throw new Error('Unexpected response type from Claude')
-  return block.text
+  return stripCodeFences(block.text)
 }
 
 export async function POST(req: NextRequest) {
@@ -44,10 +43,14 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return new Response('Unauthorized', { status: 401 })
 
-  const { topicId, teacherInstruction } = await req.json() as {
+  const body = await req.json() as {
     topicId: string
     teacherInstruction?: string
+    visualStyle?: string
+    includeQuiz?: boolean
+    focusNote?: string
   }
+  const { topicId, teacherInstruction, visualStyle, includeQuiz, focusNote } = body
 
   const { data: topic } = await supabase
     .from('topics')
@@ -67,6 +70,9 @@ export async function POST(req: NextRequest) {
     topicTitle: topic.title,
     teacherNotes: topic.notes,
     teacherInstruction,
+    visualStyle,
+    includeQuiz: includeQuiz ?? true,
+    focusNote,
   }
 
   const encoder = new TextEncoder()
@@ -77,33 +83,16 @@ export async function POST(req: NextRequest) {
       }
 
       try {
-        send('status', { stage: 'generating', message: 'Generating your lesson...' })
+        send('status', { stage: 'generating', message: 'Creating your visual…' })
 
-        const systemPrompt = buildSystemPrompt(ctx)
-        const structuredPrompt = buildStructuredPrompt(ctx)
+        const system = buildSystemPrompt(ctx)
+        const prompt = buildVisualPrompt(ctx)
+        const finalHtml = await generateHtml(system, prompt)
 
-        const rawText = await callClaude(structuredPrompt, systemPrompt)
-        const cleaned = stripCodeFences(rawText)
-
-        let lessonData: LessonData
-        try {
-          lessonData = JSON.parse(cleaned) as LessonData
-        } catch {
-          // try extracting JSON object from response
-          const start = cleaned.indexOf('{')
-          const end = cleaned.lastIndexOf('}')
-          if (start === -1 || end === -1) throw new Error('Model returned unparseable data')
-          lessonData = JSON.parse(cleaned.slice(start, end + 1)) as LessonData
-        }
-
-        const finalHtml = assembleHtml(lessonData, ctx)
-
-        // Send in one chunk — client iframe will render it
         send('html_chunk', { chunk: finalHtml })
+        send('status', { stage: 'saving', message: 'Saving…' })
 
-        send('status', { stage: 'saving', message: 'Saving your lesson...' })
-
-        // Save to DB
+        // Upsert lesson in DB
         const { data: existingLesson } = await supabase
           .from('lessons')
           .select('id, share_token')
@@ -144,7 +133,7 @@ export async function POST(req: NextRequest) {
 
         await supabase
           .from('lessons')
-          .update({ html_url: finalHtml.slice(0, 1000000) })
+          .update({ html_url: finalHtml.slice(0, 1_000_000) })
           .eq('id', lessonId)
 
         send('done', {
