@@ -95,7 +95,7 @@ export default function CreateVisualPage({ params }: Props) {
     setChatStarted(true)
     const greeting: ChatMsg = {
       role: 'assistant',
-      content: `Hi! 👋 I'm here to help you create a visual for "${topic.title}". What kind of visual would you like?`,
+      content: `What kind of visual for "${topic.title}"?`,
       options: [
         { id: 'anatomy',     label: 'Labeled Diagram',   icon: '🔬', description: 'Realistic illustration with labeled parts' },
         { id: 'flow',        label: 'Process Flow',       icon: '🔄', description: 'How a process works, step by step' },
@@ -392,30 +392,55 @@ export default function CreateVisualPage({ params }: Props) {
             </div>
 
             {/* Input */}
-            <div className="border-t border-slate-800 p-3">
+            <div className="border-t border-slate-800 p-3 space-y-2">
+              {/* Always-visible Start button */}
+              <button
+                onClick={() => generate(
+                  visualStyle ?? 'flow',
+                  includeQuiz ?? true,
+                  focusNote,
+                  originalInstruction ?? chatInput.trim() || topic?.title ?? '',
+                )}
+                disabled={generating || chatLoading}
+                className="w-full rounded-xl bg-violet-600 px-3 py-2.5 text-sm font-semibold text-white hover:bg-violet-500 disabled:opacity-40 transition-colors flex items-center justify-center gap-2"
+              >
+                {generating ? (
+                  <>
+                    <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Generating…
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                    </svg>
+                    {done ? 'Regenerate' : 'Start'}
+                  </>
+                )}
+              </button>
+
               <div className="flex items-end gap-2">
                 <textarea
                   ref={inputRef}
                   value={chatInput}
                   onChange={e => setChatInput(e.target.value)}
                   onKeyDown={handleKey}
-                  placeholder="Type a message…"
+                  placeholder="Or chat to customise…"
                   rows={1}
                   disabled={generating || chatLoading}
                   className="flex-1 rounded-xl border border-slate-700 bg-slate-800 px-3 py-2.5 text-sm text-slate-200 placeholder-slate-500 outline-none focus:border-violet-500 resize-none disabled:opacity-50 transition-colors"
-                  style={{ minHeight: 40, maxHeight: 120 }}
+                  style={{ minHeight: 40, maxHeight: 100 }}
                 />
                 <button
                   onClick={() => sendChat(chatInput)}
                   disabled={!chatInput.trim() || generating || chatLoading}
-                  className="flex-shrink-0 w-9 h-9 rounded-xl bg-violet-600 flex items-center justify-center hover:bg-violet-500 disabled:opacity-40 transition-colors"
+                  className="flex-shrink-0 w-9 h-9 rounded-xl bg-slate-700 flex items-center justify-center hover:bg-slate-600 disabled:opacity-40 transition-colors"
                 >
                   <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
                   </svg>
                 </button>
               </div>
-              <p className="text-xs text-slate-600 mt-1.5 px-1">Enter to send · Shift+Enter for new line</p>
             </div>
           </div>
 
