@@ -70,8 +70,14 @@ Once readyToGenerate is true, all three values must be set.`
 
   const raw = message.content[0].type === 'text' ? message.content[0].text : '{}'
 
+  // Strip markdown code fences Claude sometimes adds
+  const cleaned = raw.trim()
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```\s*$/i, '')
+    .trim()
+
   try {
-    const parsed = JSON.parse(raw)
+    const parsed = JSON.parse(cleaned)
     return NextResponse.json({
       message: parsed.message ?? 'How can I help?',
       showOptions: parsed.showOptions ?? false,
