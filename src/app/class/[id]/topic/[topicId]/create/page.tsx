@@ -17,6 +17,28 @@ interface ChatMsg {
   isStatus?: boolean   // dim progress messages
 }
 
+// ── localStorage helpers ──────────────────────────────────────────────────────
+interface PersistedChat {
+  messages: ChatMsg[]
+  visualStyle: string | null
+  includeQuiz: boolean | null
+  originalInstruction: string | null
+}
+
+function chatKey(topicId: string) { return `classai_chat_${topicId}` }
+
+function loadPersistedChat(topicId: string): PersistedChat | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const raw = localStorage.getItem(chatKey(topicId))
+    return raw ? JSON.parse(raw) : null
+  } catch { return null }
+}
+
+function persistChat(topicId: string, data: PersistedChat) {
+  try { localStorage.setItem(chatKey(topicId), JSON.stringify(data)) } catch {}
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function CreateVisualPage({ params }: Props) {
@@ -90,26 +112,43 @@ export default function CreateVisualPage({ params }: Props) {
     load()
   }, [topicId, classId])
 
-  // Start chat with a greeting once we have topic info
+  // Restore or start chat once topic is loaded
   useEffect(() => {
     if (chatStarted || !topic || !cls) return
     setChatStarted(true)
-    const greeting: ChatMsg = {
-      role: 'assistant',
-      content: `What kind of visual for "${topic.title}"?`,
-      options: [
-        { id: 'anatomy',     label: 'Labeled Diagram',   icon: '🔬', description: 'Realistic illustration with labeled parts' },
-        { id: 'flow',        label: 'Process Flow',       icon: '🔄', description: 'How a process works, step by step' },
-        { id: 'mindmap',     label: 'Mind Map',           icon: '🗺️', description: 'Key ideas branching from the main topic' },
-        { id: 'steps',       label: 'Step-by-Step',       icon: '📋', description: 'Numbered visual walkthrough' },
-        { id: 'timeline',    label: 'Timeline',           icon: '📅', description: 'Events or stages in order' },
-        { id: 'comparison',  label: 'Comparison',         icon: '⚖️', description: 'Side-by-side visual comparison' },
-        { id: 'graph',       label: 'Graph / Chart',      icon: '📊', description: 'Data or relationships plotted visually' },
-        { id: 'infographic', label: 'Infographic',        icon: '🖼️', description: 'Rich visual with icons, facts, and stats' },
-      ],
+
+    const saved = loadPersistedChat(topicId)
+    if (saved && saved.messages.length > 0) {
+      // Restore previous conversation
+      setChatMessages(saved.messages)
+      if (saved.visualStyle) setVisualStyle(saved.visualStyle)
+      if (saved.includeQuiz !== null) setIncludeQuiz(saved.includeQuiz)
+      if (saved.originalInstruction) setOriginalInstruction(saved.originalInstruction)
+    } else {
+      // Fresh start — show greeting with format options
+      setChatMessages([{
+        role: 'assistant',
+        content: `What kind of visual for "${topic.title}"?`,
+        options: [
+          { id: 'anatomy',     label: 'Labeled Diagram',   icon: '🔬', description: 'Realistic illustration with labeled parts' },
+          { id: 'flow',        label: 'Process Flow',       icon: '🔄', description: 'How a process works, step by step' },
+          { id: 'mindmap',     label: 'Mind Map',           icon: '🗺️', description: 'Key ideas branching from the main topic' },
+          { id: 'steps',       label: 'Step-by-Step',       icon: '📋', description: 'Numbered visual walkthrough' },
+          { id: 'timeline',    label: 'Timeline',           icon: '📅', description: 'Events or stages in order' },
+          { id: 'comparison',  label: 'Comparison',         icon: '⚖️', description: 'Side-by-side visual comparison' },
+          { id: 'graph',       label: 'Graph / Chart',      icon: '📊', description: 'Data or relationships plotted visually' },
+          { id: 'infographic', label: 'Infographic',        icon: '🖼️', description: 'Rich visual with icons, facts, and stats' },
+        ],
+      }])
     }
-    setChatMessages([greeting])
-  }, [topic, cls, chatStarted])
+  }, [topic, cls, chatStarted, topicId])
+
+  // Persist chat whenever messages change (skip status/progress messages)
+  useEffect(() => {
+    if (!chatStarted || chatMessages.length === 0) return
+    const toSave = chatMessages.filter(m => !m.isStatus)
+    persistChat(topicId, { messages: toSave, visualStyle, includeQuiz, originalInstruction })
+  }, [chatMessages, visualStyle, includeQuiz, originalInstruction, topicId, chatStarted])
 
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [chatMessages])
 
