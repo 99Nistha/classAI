@@ -36,6 +36,8 @@ export default function CreateVisualPage({ params }: Props) {
   const [visualStyle, setVisualStyle] = useState<string | null>(null)
   const [includeQuiz, setIncludeQuiz] = useState<boolean | null>(null)
   const [focusNote, setFocusNote] = useState<string | null>(null)
+  // The teacher's first real content request (preserved across the whole conversation)
+  const [originalInstruction, setOriginalInstruction] = useState<string | null>(null)
 
   // Generation state
   const [generating, setGenerating] = useState(false)
@@ -151,13 +153,18 @@ export default function CreateVisualPage({ params }: Props) {
       if (data.includeQuiz !== null) setIncludeQuiz(data.includeQuiz)
       if (data.focusNote !== null) setFocusNote(data.focusNote)
 
+      // Store the teacher's original instruction (first substantive user message)
+      if (!originalInstruction && userText.length > 4) {
+        setOriginalInstruction(userText)
+      }
+
       // Trigger generation when chat says ready
       if (data.readyToGenerate) {
         await generate(
           data.visualStyle ?? visualStyle,
           data.includeQuiz ?? includeQuiz ?? true,
           data.focusNote ?? focusNote ?? null,
-          userText,
+          originalInstruction ?? userText,
         )
       }
     } catch {

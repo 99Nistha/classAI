@@ -10,10 +10,8 @@ interface LessonContext {
   focusNote?: string
 }
 
-export function buildSystemPrompt(ctx: LessonContext): string {
-  return `You are ClassAI, creating beautiful educational visuals for Grade ${ctx.grade} ${ctx.subject} students.
-Your visuals are realistic and meaningful — like a well-designed textbook or educational website.
-Output only complete self-contained HTML. No explanation, no markdown fences.`
+export function buildSystemPrompt(_ctx: LessonContext): string {
+  return `You are creating an interactive educational web page. Output ONLY complete HTML from <!DOCTYPE html> to </html>. No explanation, no markdown fences, no code blocks.`
 }
 
 const STYLE_GUIDES: Record<string, string> = {
@@ -65,41 +63,35 @@ The most important concept should be the largest element.`,
 }
 
 export function buildVisualPrompt(ctx: LessonContext): string {
-  const style = ctx.visualStyle && STYLE_GUIDES[ctx.visualStyle]
-    ? STYLE_GUIDES[ctx.visualStyle]
-    : STYLE_GUIDES.flow
+  const focus = ctx.focusNote ? `\nTeacher also says: "${ctx.focusNote}"` : ''
+  const instr = ctx.teacherInstruction ? `\n\nTeacher's request: "${ctx.teacherInstruction}"` : ''
+  const quizLine = ctx.includeQuiz === false ? '' : '\n- A short 3-question quiz with instant feedback at the end'
 
-  const quizSection = ctx.includeQuiz !== false
-    ? `\n5. Mini-quiz: 3 multiple-choice questions with instant answer feedback`
-    : ''
-
-  const extras = [
-    ctx.teacherInstruction ? `Teacher's request: "${ctx.teacherInstruction}"` : '',
-    ctx.focusNote ? `Focus on: "${ctx.focusNote}"` : '',
-  ].filter(Boolean).join('\n')
-
-  return `Create a complete interactive HTML lesson page.
+  return `Create a beautiful, impressive interactive educational page for a teacher to share with students.
 
 Topic: "${ctx.topicTitle}" — ${ctx.subject}, Grade ${ctx.grade}
-Chapter: ${ctx.chapterTitle}
-${extras}
+Chapter: ${ctx.chapterTitle}${instr}${focus}
 
-${style}
+Make it genuinely great — the kind of thing you'd see on a top educational website. Be creative with the approach:
+- Use Three.js for 3D scenes if the topic suits it (anatomy, molecules, space, geometry…)
+- Use SVG for diagrams and illustrations
+- Use Canvas for animations
+- Use GSAP or CSS animations for smooth motion
+- Allow zoom (scroll wheel), pan (mouse drag), and 360° orbit where it makes sense
 
-⚠️  DO NOT use generic circles as placeholder nodes. Draw the actual visual representation of the topic.
+The page should have:
+- A rich interactive main visual (full-width, at least 500px tall)
+- Labels that show on hover or click
+- A brief step-by-step explanation below the visual
+- 3 interesting facts${quizLine}
+- Footer: "Made with ClassAI"
 
-PAGE SECTIONS:
-1. Main visual (full-width, min 520px tall)
-2. 4-step explanation section with emoji icons
-3. 3 click-to-reveal fun facts${quizSection}
-4. Footer: "Made with ClassAI"
-
-TECHNICAL RULES:
-- Output ONLY complete HTML from <!DOCTYPE html> to </html>
-- Everything inline — CSS and JS inside the file. Only external allowed: Google Fonts <link>
-- Dark theme: background #060a14, cards #0f172a, text #e2e8f0, accent #7c3aed (violet)
-- Font: Inter from Google Fonts
-- Fully responsive (works at 320px width)
+Rules:
+- Output ONLY complete HTML <!DOCTYPE html> … </html>
+- CDN scripts are allowed (Three.js, GSAP, D3, etc.)
+- All other CSS and JS inline
+- Dark theme: background #060a14, accent #7c3aed
+- Works on mobile
 - 100% accurate for Grade ${ctx.grade} ${ctx.subject}`
 }
 
