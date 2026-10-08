@@ -73,14 +73,10 @@ export default function CreateVisualPage({ params }: Props) {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
+  // Use srcdoc attribute — more reliable than document.write for CDN scripts
   useEffect(() => {
     if (iframeRef.current && liveHtml) {
-      const doc = iframeRef.current.contentDocument
-      if (doc) {
-        doc.open()
-        doc.write(liveHtml)
-        doc.close()
-      }
+      iframeRef.current.srcdoc = liveHtml
     }
   }, [liveHtml])
 
@@ -351,7 +347,7 @@ export default function CreateVisualPage({ params }: Props) {
               ref={iframeRef}
               className="flex-1 w-full border-0"
               title="Lesson Preview"
-              sandbox="allow-scripts allow-same-origin"
+              sandbox="allow-scripts allow-same-origin allow-popups"
             />
           ) : (
             <div className="flex-1 flex items-center justify-center bg-gray-50">
