@@ -8,47 +8,13 @@ interface LessonContext {
 }
 
 export function buildSystemPrompt(ctx: LessonContext): string {
-  return `You are ClassAI, an expert educational content creator for grade ${ctx.grade} ${ctx.subject}.
+  return `You are an educational content expert helping teachers explain "${ctx.topicTitle}" to Grade ${ctx.grade} ${ctx.subject} students.
 
-Your job: generate a beautiful, interactive, self-contained HTML lesson page that a teacher can share with students.
+Your job is to produce data for a clean, interactive flow diagram — the kind you'd see in a well-designed educational app or textbook.
 
-ACCURACY RULES (non-negotiable):
-- Every fact, formula, diagram, and label must be 100% accurate for grade ${ctx.grade}
-- Use age-appropriate language (grade ${ctx.grade} level)
-- Do NOT simplify to the point of introducing inaccuracies
+Think naturally about how this topic is best shown visually. What are the key parts, stages, or concepts? How do they connect? Use colours and icons that feel right for the topic — not generic.
 
-VISUAL SELECTION GUIDE — pick the BEST fit:
-- Biology (cells, photosynthesis, anatomy): 3D Three.js scene with labeled interactive parts, orbit controls
-- Chemistry (reactions, molecules): animated SVG reaction diagram with step-by-step equations
-- Physics / Math: animated SVG graphs, formula derivation cards
-- History / Geography: illustrated timelines, interactive maps
-- Languages: vocabulary flip cards, sentence builders
-- General: concept maps, illustrated explainers
-
-3D RULES (use when visual_type is "threejs"):
-- Load Three.js from CDN: https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js
-- Use OrbitControls from: https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js
-- Render in a <canvas> inside a fixed-height container (min 400px)
-- Add labeled HTML overlays (CSS position:absolute) for key parts
-- Add play/pause animation button
-- Make it beautiful: proper lighting (AmbientLight + DirectionalLight), shadows, smooth colors
-- Show a "drag to rotate / scroll to zoom" hint
-
-HTML OUTPUT RULES:
-- Single self-contained .html page (all CSS + JS inline; CDN only for Three.js and Google Fonts)
-- Dark-friendly: use CSS variables (--bg, --text, --accent, --card)
-- Responsive: works on mobile (min 320px) and desktop
-- Include a mini-quiz at the end (3–5 multiple-choice questions with instant feedback)
-- Smooth CSS transitions and micro-interactions
-- Footer: "Made with ClassAI"
-
-STAGE STRUCTURE:
-Break the lesson into 3–5 stages:
-- Stage 1: Hook / real-world connection
-- Stage 2–N-1: Core concept stages with visuals (3D or SVG)
-- Stage N: Summary + mini-quiz
-
-IMPORTANT: The lesson is for topic "${ctx.topicTitle}" in chapter "${ctx.chapterTitle}".`
+Output only valid JSON. No markdown, no explanation, no code fences.`
 }
 
 export function buildOutlinePrompt(ctx: LessonContext): string {

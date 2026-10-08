@@ -57,67 +57,48 @@ export function buildStructuredPrompt(ctx: {
     ? `\n⚡ Teacher instruction (HIGHEST PRIORITY): ${ctx.teacherInstruction}`
     : ''
 
-  return `You are building data for an interactive educational lesson visualization.
+  return `Create a flow diagram for: "${ctx.topicTitle}" — ${ctx.subject}, Grade ${ctx.grade}
+Chapter: ${ctx.chapterTitle}${notes}${instr}
 
-Topic: ${ctx.topicTitle}
-Chapter: ${ctx.chapterTitle}
-Subject: ${ctx.subject}, Grade ${ctx.grade}${notes}${instr}
+Imagine the clearest, most natural way to show this topic as a connected flow diagram — the way a great educational site would show it. What are the key stages, parts, or concepts, and how do they connect?
 
-Output ONLY a single valid JSON object — no markdown, no code fences, no explanation.
+Pick colours that feel right for each node (vibrant, varied, topic-appropriate). Use a relevant emoji for each. Keep labels short.
+
+Output ONLY valid JSON — no markdown, no code fences:
 
 {
   "pageTitle": "string",
   "scene": {
     "nodes": [
       {
-        "id": "unique_snake_case_id",
-        "label": "Short Display Name",
-        "icon": "single emoji",
+        "id": "unique_id",
+        "label": "Short Name",
+        "icon": "emoji",
         "x": 0.15,
-        "y": 0.20,
+        "y": 0.30,
         "r": 0.065,
         "color": "#hexcolor",
-        "phase": 0.0,
-        "info": "2-3 sentence explanation shown when user clicks this node."
+        "phase": 0,
+        "info": "One sentence shown when this node is clicked."
       }
     ],
     "edges": [
-      {
-        "from": "node_id",
-        "to": "node_id",
-        "label": "short flow label",
-        "color": "#hexcolor88",
-        "offset": 0.0
-      }
+      { "from": "id", "to": "id", "label": "short label", "color": "#hexcolor88", "offset": 0.0 }
     ]
   },
   "steps": [
-    { "icon": "emoji", "title": "Step title", "text": "Explanation paragraph." }
+    { "icon": "emoji", "title": "Step title", "text": "Explanation." }
   ],
-  "facts": ["Interesting fact 1.", "Interesting fact 2.", "Interesting fact 3."],
+  "facts": ["Fact 1.", "Fact 2.", "Fact 3."],
   "quiz": [
-    {
-      "q": "Question?",
-      "options": ["Option A", "Option B", "Option C", "Option D"],
-      "answer": 0,
-      "explain": "Why the correct answer is right."
-    }
+    { "q": "Question?", "options": ["A","B","C","D"], "answer": 0, "explain": "Why correct." }
   ]
 }
 
-SCENE RULES:
-- Create 8–10 nodes covering the key stages: inputs → processes → outputs
-- Spread nodes across the canvas: x 0.07–0.90, y 0.08–0.85 (no two nodes closer than 0.15)
-- Add 7–10 directed edges forming the complete flow
-- Color by role: energy→#FFD700, inputs→#60a5fa, plant parts→#34d399, organelles→#a78bfa, reactions→#c084fc, molecules→#22d3ee, outputs→#fb923c
-- phase: stagger 0–5, offset: stagger 0.0–0.9
-- info: 1 concise sentence per node, accurate for Grade ${ctx.grade}
-
-STEPS: exactly 4 steps.
-FACTS: exactly 3 facts.
-QUIZ: exactly 3 questions, one correct answer each (answer = 0-based index).
-
-All content accurate for Grade ${ctx.grade} ${ctx.subject}.`
+- 6–10 nodes spread across canvas: x 0.07–0.90, y 0.08–0.85, no two nodes within 0.15 of each other
+- phase 0–5 to stagger animations, offset 0.0–0.9 to stagger particles on edges
+- Exactly 4 steps, 3 facts, 3 quiz questions
+- All content accurate for Grade ${ctx.grade} ${ctx.subject}`
 }
 
 // ─── Rendering Engine (inline JS, no external deps) ──────────────────────────
