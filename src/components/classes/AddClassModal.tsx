@@ -37,12 +37,12 @@ export default function AddClassModal({ onClose, onAdded }: Props) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-      <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Add a class</h2>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
+      <div className="w-full max-w-md rounded-2xl bg-slate-900 border border-slate-700 p-6 shadow-2xl">
+        <h2 className="text-lg font-bold text-white mb-5">Add a class</h2>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Class name</label>
+            <label className="block text-sm font-medium text-slate-300 mb-1.5">Class name</label>
             <input
               type="text"
               value={name}
@@ -50,50 +50,59 @@ export default function AddClassModal({ onClose, onAdded }: Props) {
               required
               autoFocus
               placeholder="e.g. Class 9B"
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+              className="w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-2.5 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500 transition-colors"
             />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Grade</label>
+              <label className="block text-sm font-medium text-slate-300 mb-1.5">Grade</label>
               <select
                 value={grade}
                 onChange={(e) => setGrade(Number(e.target.value))}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-indigo-500"
+                className="w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-2.5 text-sm text-slate-100 outline-none focus:border-violet-500 appearance-none cursor-pointer"
               >
-                {[8, 9, 10, 11, 12].map((g) => (
-                  <option key={g} value={g}>Grade {g}</option>
+                {[6, 7, 8, 9, 10, 11, 12].map((g) => (
+                  <option key={g} value={g} className="bg-slate-800 text-slate-100">Grade {g}</option>
                 ))}
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Subject</label>
+              <label className="block text-sm font-medium text-slate-300 mb-1.5">Subject</label>
               <select
                 value={subject}
                 onChange={(e) => setSubject(e.target.value)}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-indigo-500"
+                className="w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-2.5 text-sm text-slate-100 outline-none focus:border-violet-500 appearance-none cursor-pointer"
               >
                 {SUBJECTS.map((s) => (
-                  <option key={s} value={s}>{s}</option>
+                  <option key={s} value={s} className="bg-slate-800 text-slate-100">{s}</option>
                 ))}
               </select>
             </div>
           </div>
-          {error && <p className="text-sm text-red-600">{error}</p>}
-          <div className="flex gap-2 pt-1">
+          {error && (
+            <div className="rounded-xl bg-red-950/50 border border-red-900 px-3 py-2.5">
+              <p className="text-sm text-red-400">{error}</p>
+            </div>
+          )}
+          <div className="flex gap-3 pt-1">
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              className="flex-1 rounded-xl border border-slate-700 px-4 py-2.5 text-sm font-semibold text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={loading || !name.trim()}
-              className="flex-1 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60 transition-colors"
+              className="flex-1 rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-violet-500 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
             >
-              {loading ? 'Adding…' : 'Add class'}
+              {loading ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  Adding…
+                </>
+              ) : 'Add class'}
             </button>
           </div>
         </form>

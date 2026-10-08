@@ -16,6 +16,42 @@ interface ChatMessage {
   type?: 'status' | 'done' | 'error'
 }
 
+// One generation attempt
+interface Session {
+  instruction: string
+  timestamp: number
+  messages: ChatMessage[]
+  status: 'success' | 'error'
+}
+
+// ── localStorage helpers ──────────────────────────────────────────────────────
+function historyKey(topicId: string) { return `classai_history_${topicId}` }
+
+function loadSessions(topicId: string): Session[] {
+  if (typeof window === 'undefined') return []
+  try {
+    const raw = localStorage.getItem(historyKey(topicId))
+    return raw ? (JSON.parse(raw) as Session[]) : []
+  } catch { return [] }
+}
+
+function saveSessions(topicId: string, sessions: Session[]) {
+  try {
+    // Keep last 5
+    localStorage.setItem(historyKey(topicId), JSON.stringify(sessions.slice(-5)))
+  } catch {}
+}
+
+function relativeTime(ts: number): string {
+  const diff = Date.now() - ts
+  if (diff < 60_000) return 'just now'
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`
+  return new Date(ts).toLocaleDateString()
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 export default function CreateVisualPage({ params }: Props) {
   const { id: classId, topicId } = use(params)
 
@@ -27,7 +63,12 @@ export default function CreateVisualPage({ params }: Props) {
 
   const [instruction, setInstruction] = useState('')
   const [generating, setGenerating] = useState(false)
-  const [messages, setMessages] = useState<ChatMessage[]>([])
+  // Live messages for the CURRENT in-progress generation
+  const [liveMessages, setLiveMessages] = useState<ChatMessage[]>([])
+  // Past sessions loaded from localStorage + newly completed ones
+  const [pastSessions, setPastSessions] = useState<Session[]>([])
+  const [expandedSessions, setExpandedSessions] = useState<Set<number>>(new Set())
+
   const [liveHtml, setLiveHtml] = useState('')
   const [lessonId, setLessonId] = useState<string | null>(null)
   const [shareToken, setShareToken] = useState<string | null>(null)
@@ -39,14 +80,11 @@ export default function CreateVisualPage({ params }: Props) {
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const abortRef = useRef<(() => void) | null>(null)
 
-  // Load topic + existing lesson
+  // Load topic + existing lesson + conversation history
   useEffect(() => {
     async function load() {
       const supabase = createClient()
-      const [{ data: topicData }, { data: chapterData0 }] = await Promise.all([
-        supabase.from('topics').select('*').eq('id', topicId).single(),
-        supabase.from('topics').select('chapter_id').eq('id', topicId).single(),
-      ])
+      const { data: topicData } = await supabase.from('topics').select('*').eq('id', topicId).single()
       if (!topicData) { setLoading(false); return }
       setTopic(topicData)
 
@@ -57,7 +95,7 @@ export default function CreateVisualPage({ params }: Props) {
       if (chData) setChapter(chData)
       if (clsData) setCls(clsData)
 
-      // Load existing lesson if any
+      // Load existing lesson
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
         const { data: existing } = await supabase
@@ -77,12 +115,22 @@ export default function CreateVisualPage({ params }: Props) {
         }
       }
 
+      // Load conversation history from localStorage
+      const sessions = loadSessions(topicId)
+      setPastSessions(sessions)
+
+      // Pre-fill instruction with last used prompt
+      if (sessions.length > 0) {
+        const last = sessions[sessions.length - 1]
+        if (last.instruction) setInstruction(last.instruction)
+      }
+
       setLoading(false)
     }
     load()
   }, [topicId, classId])
 
-  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
+  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [liveMessages])
 
   useEffect(() => {
     if (iframeRef.current && liveHtml) {
@@ -90,29 +138,44 @@ export default function CreateVisualPage({ params }: Props) {
     }
   }, [liveHtml])
 
-  function addMessage(msg: ChatMessage) {
-    setMessages((prev) => [...prev, msg])
+  function addLive(msg: ChatMessage) {
+    setLiveMessages((prev) => [...prev, msg])
+  }
+
+  function toggleSession(i: number) {
+    setExpandedSessions((prev) => {
+      const next = new Set(prev)
+      next.has(i) ? next.delete(i) : next.add(i)
+      return next
+    })
   }
 
   async function generate() {
     if (generating) return
+    const currentInstruction = instruction.trim()
+
     setGenerating(true)
     setDone(false)
-    setMessages([])
-    setLiveHtml('')
-    setLessonId(null)
-    setShareToken(null)
-    setHasPrevious(false)
+    setLiveMessages([])  // reset live panel only — past sessions stay
+
+    let htmlAccumulator = ''
+    const sessionMessages: ChatMessage[] = []
+
+    function addMsg(msg: ChatMessage) {
+      sessionMessages.push(msg)
+      addLive(msg)
+    }
 
     try {
       const response = await fetch('/api/generate-lesson', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topicId, teacherInstruction: instruction || undefined }),
+        body: JSON.stringify({ topicId, teacherInstruction: currentInstruction || undefined }),
       })
 
       if (!response.ok || !response.body) {
-        addMessage({ role: 'assistant', content: 'Failed to start generation. Please try again.', type: 'error' })
+        addMsg({ role: 'assistant', content: 'Failed to start generation. Please try again.', type: 'error' })
+        saveSession('error', currentInstruction, sessionMessages)
         setGenerating(false)
         return
       }
@@ -122,7 +185,6 @@ export default function CreateVisualPage({ params }: Props) {
       abortRef.current = () => reader.cancel()
 
       let buffer = ''
-      let htmlAccumulator = ''
 
       while (true) {
         const { done: streamDone, value } = await reader.read()
@@ -146,7 +208,7 @@ export default function CreateVisualPage({ params }: Props) {
 
           switch (eventType) {
             case 'status':
-              addMessage({ role: 'system', content: payload.message, type: 'status' })
+              addMsg({ role: 'system', content: payload.message, type: 'status' })
               break
             case 'html_chunk':
               htmlAccumulator += payload.chunk
@@ -156,20 +218,40 @@ export default function CreateVisualPage({ params }: Props) {
               setLessonId(payload.lessonId)
               setShareToken(payload.shareToken)
               setDone(true)
-              addMessage({ role: 'assistant', content: `"${payload.title}" is ready!`, type: 'done' })
+              setHasPrevious(false)
+              addMsg({ role: 'assistant', content: `"${payload.title}" is ready!`, type: 'done' })
+              saveSession('success', currentInstruction, sessionMessages)
               break
             case 'error':
-              addMessage({ role: 'assistant', content: `Error: ${payload.message}`, type: 'error' })
+              addMsg({ role: 'assistant', content: `Error: ${payload.message}`, type: 'error' })
+              saveSession('error', currentInstruction, sessionMessages)
               break
           }
         }
       }
     } catch (err) {
-      addMessage({ role: 'assistant', content: err instanceof Error ? err.message : 'Something went wrong.', type: 'error' })
+      const msg = err instanceof Error ? err.message : 'Something went wrong.'
+      addMsg({ role: 'assistant', content: msg, type: 'error' })
+      saveSession('error', currentInstruction, sessionMessages)
     } finally {
       setGenerating(false)
       abortRef.current = null
     }
+  }
+
+  function saveSession(status: 'success' | 'error', instr: string, msgs: ChatMessage[]) {
+    const newSession: Session = {
+      instruction: instr,
+      timestamp: Date.now(),
+      messages: msgs,
+      status,
+    }
+    setPastSessions((prev) => {
+      const updated = [...prev, newSession].slice(-5)
+      saveSessions(topicId, updated)
+      return updated
+    })
+    setLiveMessages([])
   }
 
   if (loading) {
@@ -205,20 +287,15 @@ export default function CreateVisualPage({ params }: Props) {
             </div>
             {done && shareToken && lessonId && (
               <div className="flex items-center gap-2">
-                <Link
-                  href={`/share/${shareToken}`}
-                  target="_blank"
-                  className="flex items-center gap-1.5 rounded-xl border border-slate-700 px-3 py-1.5 text-sm font-medium text-slate-300 hover:border-slate-500 hover:text-white transition-colors"
-                >
+                <Link href={`/share/${shareToken}`} target="_blank"
+                  className="flex items-center gap-1.5 rounded-xl border border-slate-700 px-3 py-1.5 text-sm font-medium text-slate-300 hover:border-slate-500 hover:text-white transition-colors">
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                   </svg>
                   Open
                 </Link>
-                <button
-                  onClick={() => setShowShareModal(true)}
-                  className="flex items-center gap-1.5 rounded-xl bg-violet-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-violet-500 transition-colors"
-                >
+                <button onClick={() => setShowShareModal(true)}
+                  className="flex items-center gap-1.5 rounded-xl bg-violet-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-violet-500 transition-colors">
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
                   </svg>
@@ -231,25 +308,66 @@ export default function CreateVisualPage({ params }: Props) {
 
         {/* Split layout */}
         <div className="flex-1 flex overflow-hidden" style={{ height: 'calc(100vh - 57px)' }}>
-          {/* Left: Controls */}
+          {/* Left: Conversation panel */}
           <div className="w-72 flex-shrink-0 flex flex-col bg-slate-900 border-r border-slate-800">
-            <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
+            <div className="flex-1 overflow-y-auto px-3 py-3 space-y-2">
 
-              {/* Previous visual indicator */}
-              {hasPrevious && messages.length === 0 && (
-                <div className="rounded-xl bg-emerald-950 border border-emerald-800 px-3 py-2.5 flex items-start gap-2">
-                  <svg className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  <div>
-                    <p className="text-xs font-semibold text-emerald-400">Previous visual loaded</p>
-                    <p className="text-xs text-emerald-600 mt-0.5">Generate to create a new version</p>
-                  </div>
+              {/* ── Past sessions ── */}
+              {pastSessions.length > 0 && (
+                <div className="space-y-1.5">
+                  {pastSessions.map((s, i) => (
+                    <div key={i} className="rounded-xl border border-slate-800 overflow-hidden">
+                      {/* Session header — always visible */}
+                      <button
+                        onClick={() => toggleSession(i)}
+                        className="w-full flex items-center gap-2 px-3 py-2.5 bg-slate-800/60 hover:bg-slate-800 transition-colors text-left"
+                      >
+                        <span className={`w-2 h-2 rounded-full flex-shrink-0 ${s.status === 'success' ? 'bg-emerald-500' : 'bg-red-500'}`} />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-medium text-slate-300 truncate">
+                            {s.instruction || '(no instruction)'}
+                          </p>
+                          <p className="text-xs text-slate-600 mt-0.5">{relativeTime(s.timestamp)}</p>
+                        </div>
+                        <svg className={`w-3.5 h-3.5 text-slate-600 flex-shrink-0 transition-transform ${expandedSessions.has(i) ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                      </button>
+
+                      {/* Session messages — shown when expanded */}
+                      {expandedSessions.has(i) && (
+                        <div className="px-3 py-2 space-y-1.5 bg-slate-900/60">
+                          {s.messages.map((msg, mi) => (
+                            <div key={mi}>
+                              {msg.type === 'status' && (
+                                <p className="text-xs text-slate-500">{msg.content}</p>
+                              )}
+                              {msg.type === 'done' && (
+                                <p className="text-xs text-emerald-400 font-medium">{msg.content}</p>
+                              )}
+                              {msg.type === 'error' && (
+                                <p className="text-xs text-red-400">{msg.content}</p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+
+                  {/* Separator before current */}
+                  {(generating || liveMessages.length > 0) && (
+                    <div className="flex items-center gap-2 py-1">
+                      <div className="flex-1 h-px bg-slate-800" />
+                      <span className="text-xs text-slate-600 font-medium">New generation</span>
+                      <div className="flex-1 h-px bg-slate-800" />
+                    </div>
+                  )}
                 </div>
               )}
 
-              {/* Empty state */}
-              {messages.length === 0 && !generating && !hasPrevious && (
+              {/* ── Current live messages ── */}
+              {liveMessages.length === 0 && !generating && pastSessions.length === 0 && (
                 <div className="text-center py-10">
                   <div className="w-12 h-12 rounded-2xl bg-violet-950 flex items-center justify-center mx-auto mb-3">
                     <svg className="w-6 h-6 text-violet-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -257,11 +375,23 @@ export default function CreateVisualPage({ params }: Props) {
                     </svg>
                   </div>
                   <p className="text-sm font-semibold text-slate-300">Ready to create</p>
-                  <p className="text-xs text-slate-500 mt-1">Describe what you want or just hit Generate</p>
+                  <p className="text-xs text-slate-500 mt-1">Describe what you want, then hit Generate</p>
                 </div>
               )}
 
-              {messages.map((msg, i) => (
+              {hasPrevious && liveMessages.length === 0 && !generating && (
+                <div className="rounded-xl bg-emerald-950/60 border border-emerald-900 px-3 py-2.5 flex items-start gap-2">
+                  <svg className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <div>
+                    <p className="text-xs font-semibold text-emerald-400">Previous visual loaded</p>
+                    <p className="text-xs text-emerald-700 mt-0.5">Edit your prompt and generate to update it</p>
+                  </div>
+                </div>
+              )}
+
+              {liveMessages.map((msg, i) => (
                 <div key={i}>
                   {msg.type === 'status' && (
                     <div className="flex items-center gap-2 text-xs text-slate-500">
@@ -270,7 +400,7 @@ export default function CreateVisualPage({ params }: Props) {
                     </div>
                   )}
                   {msg.type === 'done' && (
-                    <div className="rounded-xl bg-emerald-950 border border-emerald-800 px-3 py-2.5 flex items-center gap-2">
+                    <div className="rounded-xl bg-emerald-950/60 border border-emerald-900 px-3 py-2.5 flex items-center gap-2">
                       <svg className="w-4 h-4 text-emerald-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                       </svg>
@@ -278,7 +408,7 @@ export default function CreateVisualPage({ params }: Props) {
                     </div>
                   )}
                   {msg.type === 'error' && (
-                    <div className="rounded-xl bg-red-950 border border-red-900 px-3 py-2.5">
+                    <div className="rounded-xl bg-red-950/60 border border-red-900 px-3 py-2.5">
                       <p className="text-xs text-red-300">{msg.content}</p>
                     </div>
                   )}
@@ -292,7 +422,7 @@ export default function CreateVisualPage({ params }: Props) {
               <textarea
                 value={instruction}
                 onChange={(e) => setInstruction(e.target.value)}
-                placeholder="Optional: describe what you want, e.g. 'Show the full photosynthesis flow with all stages'"
+                placeholder="Describe what you want, e.g. 'Show the full photosynthesis flow with all stages and labels'"
                 rows={3}
                 disabled={generating}
                 className="w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-xs text-slate-200 placeholder-slate-500 outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500 resize-none disabled:opacity-50 transition-colors"
@@ -312,7 +442,7 @@ export default function CreateVisualPage({ params }: Props) {
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                   </svg>
-                  {done ? 'Regenerate' : 'Generate Visual'}
+                  {done || hasPrevious ? 'Regenerate' : 'Generate Visual'}
                 </button>
               )}
             </div>
