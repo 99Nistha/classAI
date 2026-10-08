@@ -1,7 +1,5 @@
 'use client'
 
-export const dynamic = 'force-dynamic'
-
 import { useEffect, useRef, useState, use } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
@@ -18,11 +16,6 @@ interface ChatMessage {
   type?: 'status' | 'outline' | 'done' | 'error'
 }
 
-interface OutlineStage {
-  id: number
-  title: string
-  description: string
-}
 
 export default function CreateVisualPage({ params }: Props) {
   const { id: classId, topicId } = use(params)
@@ -153,16 +146,6 @@ export default function CreateVisualPage({ params }: Props) {
                 role: 'system',
                 content: payload.message,
                 type: 'status',
-              })
-              break
-
-            case 'outline':
-              addMessage({
-                role: 'assistant',
-                content: `**${payload.outline.title}**\n${payload.outline.tagline}\n\n${(payload.outline.stages as OutlineStage[])
-                  .map((s) => `${s.id}. ${s.title} — ${s.description}`)
-                  .join('\n')}`,
-                type: 'outline',
               })
               break
 

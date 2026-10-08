@@ -2,37 +2,74 @@ import { NextRequest } from 'next/server'
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
-import {
-  buildSystemPrompt,
-  buildOutlinePrompt,
-  buildPageShellPrompt,
-  buildStagePrompt,
-  buildQuizPrompt,
-  buildPageClosePrompt,
-  type OutlineJSON,
-  type StageOutline,
-} from '@/lib/prompts/lesson'
-import { assembleFinalLesson, stripCodeFences, extractJSON } from '@/lib/lesson/assembler'
+import { buildSystemPrompt } from '@/lib/prompts/lesson'
+import { stripCodeFences } from '@/lib/lesson/assembler'
 
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY!)
 
-// Try models in order until one works
 const MODEL_FALLBACKS = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-flash-latest']
-
-function getModel(systemPrompt: string, modelName = MODEL_FALLBACKS[0]) {
-  return genAI.getGenerativeModel({
-    model: modelName,
-    systemInstruction: systemPrompt,
-  })
-}
-
 
 function sse(event: string, data: unknown): string {
   return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`
 }
 
+function buildFullLessonPrompt(ctx: {
+  grade: number
+  subject: string
+  chapterTitle: string
+  topicTitle: string
+  teacherNotes?: string | null
+  teacherInstruction?: string
+}): string {
+  const notes = ctx.teacherNotes ? `\nTeacher notes: ${ctx.teacherNotes}` : ''
+  const instruction = ctx.teacherInstruction ? `\nTeacher instruction: ${ctx.teacherInstruction}` : ''
+
+  return `Generate a complete, beautiful, self-contained interactive lesson HTML page for:
+
+Topic: ${ctx.topicTitle}
+Chapter: ${ctx.chapterTitle}
+Subject: ${ctx.subject}, Grade ${ctx.grade}${notes}${instruction}
+
+REQUIREMENTS:
+- Single complete HTML file (<!DOCTYPE html> through </html>)
+- All CSS and JS inline — no external dependencies EXCEPT:
+  • Google Fonts: https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap
+  • Three.js (if 3D needed): https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js
+  • OrbitControls (if 3D): https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js
+- CSS variables: --bg, --text, --accent, --card, --muted
+- Dark mode via @media (prefers-color-scheme: dark)
+- Sticky header with lesson title and subject badge
+- 3–5 content sections with smooth fade-in animations
+- For Biology topics: use Three.js for a 3D interactive scene with labeled overlays, OrbitControls (drag to rotate), AmbientLight + DirectionalLight
+- For other topics: rich SVG diagrams or animated CSS visuals
+- End with a 4-question multiple-choice quiz (instant feedback on click)
+- Footer: "Made with ClassAI"
+- Responsive (works on mobile min 320px)
+- All facts 100% accurate for Grade ${ctx.grade}
+
+Output ONLY the complete HTML. No explanation, no markdown fences.`
+}
+
+async function callWithFallback(prompt: string, systemPrompt: string): Promise<string> {
+  let lastError: any
+  for (const modelName of MODEL_FALLBACKS) {
+    try {
+      console.log(`Trying model: ${modelName}`)
+      const model = genAI.getGenerativeModel({
+        model: modelName,
+        systemInstruction: systemPrompt,
+      })
+      const result = await model.generateContent(prompt)
+      return result.response.text()
+    } catch (e: any) {
+      console.error(`Model ${modelName} failed:`, e?.message ?? e)
+      lastError = e
+    }
+  }
+  throw new Error(`All models failed. Last error: ${lastError?.message ?? 'unknown'}`)
+}
+
 export async function POST(req: NextRequest) {
-  // Auth check
   const cookieStore = await cookies()
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -50,26 +87,20 @@ export async function POST(req: NextRequest) {
   )
 
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) {
-    return new Response('Unauthorized', { status: 401 })
-  }
+  if (!user) return new Response('Unauthorized', { status: 401 })
 
-  const body = await req.json()
-  const { topicId, teacherInstruction } = body as {
+  const { topicId, teacherInstruction } = await req.json() as {
     topicId: string
     teacherInstruction?: string
   }
 
-  // Load topic + chapter + class info
   const { data: topic } = await supabase
     .from('topics')
     .select('*, chapters(title, classes(name, grade, subject))')
     .eq('id', topicId)
     .single()
 
-  if (!topic) {
-    return new Response('Topic not found', { status: 404 })
-  }
+  if (!topic) return new Response('Topic not found', { status: 404 })
 
   const chapter = (topic as any).chapters
   const cls = chapter?.classes
@@ -83,8 +114,6 @@ export async function POST(req: NextRequest) {
     teacherInstruction,
   }
 
-  const systemPrompt = buildSystemPrompt(ctx)
-
   const encoder = new TextEncoder()
   const stream = new ReadableStream({
     async start(controller) {
@@ -93,100 +122,20 @@ export async function POST(req: NextRequest) {
       }
 
       try {
-        // ── Step 1: Generate outline ──────────────────────────────────────
-        send('status', { stage: 'outline', message: 'Planning your lesson...' })
+        send('status', { stage: 'generating', message: 'Generating your lesson...' })
 
-        let outlineRaw = ''
-        for (const modelName of MODEL_FALLBACKS) {
-          try {
-            // Use JSON mime type to force clean JSON output
-            const m = genAI.getGenerativeModel({
-              model: modelName,
-              systemInstruction: systemPrompt,
-              generationConfig: { responseMimeType: 'application/json' },
-            })
-            const r = await m.generateContent(buildOutlinePrompt(ctx))
-            outlineRaw = r.response.text()
-            break
-          } catch (e: any) {
-            if (e?.status === 503 || e?.status === 404 || e?.httpStatusCode === 503) continue
-            throw e
-          }
-        }
+        const systemPrompt = buildSystemPrompt(ctx)
+        const fullPrompt = buildFullLessonPrompt(ctx)
 
-        let outline: OutlineJSON
-        try {
-          outline = JSON.parse(extractJSON(outlineRaw))
-        } catch {
-          // Log raw response to server console for debugging
-          console.error('Outline parse failed. Raw response:\n', outlineRaw.slice(0, 500))
-          send('error', { message: `Could not parse lesson plan. Model returned: "${outlineRaw.slice(0, 120)}..."` })
-          controller.close()
-          return
-        }
+        const rawHtml = await callWithFallback(fullPrompt, systemPrompt)
+        const finalHtml = stripCodeFences(rawHtml)
 
-        send('outline', { outline })
+        // Send in one chunk — client iframe will render it
+        send('html_chunk', { chunk: finalHtml })
 
-        // Helper: generate with fallback (non-streaming to avoid rate limit issues)
-        async function generateWithFallback(prompt: string, onChunk: (t: string) => void): Promise<string> {
-          let lastError: any
-          for (const modelName of MODEL_FALLBACKS) {
-            try {
-              const m = getModel(systemPrompt, modelName)
-              const result = await m.generateContent(prompt)
-              const text = stripCodeFences(result.response.text())
-              onChunk(text)
-              return text
-            } catch (e: any) {
-              console.error(`Model ${modelName} failed:`, e?.message ?? e)
-              lastError = e
-              // Always try next model on any error
-              continue
-            }
-          }
-          throw new Error(`All models failed. Last error: ${lastError?.message ?? 'unknown'}`)
-        }
-
-        // ── Step 2: Generate page shell ───────────────────────────────────
-        send('status', { stage: 'shell', message: 'Setting up the page design...' })
-        const shell = await generateWithFallback(
-          buildPageShellPrompt(ctx, outline),
-          (t) => send('html_chunk', { chunk: t })
-        )
-
-        // ── Step 3: Generate each stage ───────────────────────────────────
-        const stageSections: string[] = []
-        let accumulatedHtml = shell
-
-        for (const stage of outline.stages as StageOutline[]) {
-          send('status', { stage: `stage_${stage.id}`, message: `Building stage ${stage.id}: ${stage.title}...` })
-          const stageHtml = await generateWithFallback(
-            buildStagePrompt(ctx, outline, stage, accumulatedHtml),
-            (t) => send('html_chunk', { chunk: t })
-          )
-          stageSections.push(stageHtml)
-          accumulatedHtml += stageHtml
-        }
-
-        // ── Step 4: Generate quiz ─────────────────────────────────────────
-        send('status', { stage: 'quiz', message: 'Generating quiz...' })
-        const quizHtml = await generateWithFallback(
-          buildQuizPrompt(ctx, outline),
-          (t) => send('html_chunk', { chunk: t })
-        )
-
-        // ── Step 5: Close page ────────────────────────────────────────────
-        send('status', { stage: 'close', message: 'Finishing up...' })
-        const closeHtml = await generateWithFallback(
-          buildPageClosePrompt(),
-          (t) => send('html_chunk', { chunk: t })
-        )
-
-        const finalHtml = assembleFinalLesson(shell, stageSections, quizHtml, closeHtml)
-
-        // ── Step 6: Save lesson ───────────────────────────────────────────
         send('status', { stage: 'saving', message: 'Saving your lesson...' })
 
+        // Save to DB
         const { data: existingLesson } = await supabase
           .from('lessons')
           .select('id, share_token')
@@ -205,7 +154,7 @@ export async function POST(req: NextRequest) {
             .update({ instructions: teacherInstruction ?? null, status: 'draft' })
             .eq('id', lessonId)
         } else {
-          const { data: newLesson, error: lessonError } = await supabase
+          const { data: newLesson, error } = await supabase
             .from('lessons')
             .insert({
               topic_id: topicId,
@@ -216,8 +165,8 @@ export async function POST(req: NextRequest) {
             .select()
             .single()
 
-          if (lessonError || !newLesson) {
-            send('error', { message: 'Failed to save lesson record.' })
+          if (error || !newLesson) {
+            send('error', { message: 'Failed to save lesson.' })
             controller.close()
             return
           }
@@ -230,7 +179,11 @@ export async function POST(req: NextRequest) {
           .update({ html_url: finalHtml.slice(0, 1000000) })
           .eq('id', lessonId)
 
-        send('done', { lessonId, shareToken, title: outline.title })
+        send('done', {
+          lessonId,
+          shareToken,
+          title: `${ctx.topicTitle} — Grade ${ctx.grade} ${ctx.subject}`,
+        })
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Generation failed'
         send('error', { message })
