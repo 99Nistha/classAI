@@ -16,12 +16,16 @@ import { assembleFinalLesson, stripCodeFences } from '@/lib/lesson/assembler'
 
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY!)
 
-function getModel(systemPrompt: string) {
+// Try models in order until one works
+const MODEL_FALLBACKS = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-flash-latest']
+
+function getModel(systemPrompt: string, modelName = MODEL_FALLBACKS[0]) {
   return genAI.getGenerativeModel({
-    model: 'gemini-3.8-flash',
+    model: modelName,
     systemInstruction: systemPrompt,
   })
 }
+
 
 function sse(event: string, data: unknown): string {
   return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`
@@ -80,7 +84,6 @@ export async function POST(req: NextRequest) {
   }
 
   const systemPrompt = buildSystemPrompt(ctx)
-  const model = getModel(systemPrompt)
 
   const encoder = new TextEncoder()
   const stream = new ReadableStream({
@@ -93,8 +96,18 @@ export async function POST(req: NextRequest) {
         // ── Step 1: Generate outline ──────────────────────────────────────
         send('status', { stage: 'outline', message: 'Planning your lesson...' })
 
-        const outlineResult = await model.generateContent(buildOutlinePrompt(ctx))
-        const outlineRaw = outlineResult.response.text()
+        let outlineRaw = ''
+        for (const modelName of MODEL_FALLBACKS) {
+          try {
+            const m = getModel(systemPrompt, modelName)
+            const r = await m.generateContent(buildOutlinePrompt(ctx))
+            outlineRaw = r.response.text()
+            break
+          } catch (e: any) {
+            if (e?.status === 503 || e?.status === 404 || e?.httpStatusCode === 503) continue
+            throw e
+          }
+        }
 
         let outline: OutlineJSON
         try {
@@ -107,61 +120,70 @@ export async function POST(req: NextRequest) {
 
         send('outline', { outline })
 
+        // Helper: stream a prompt with model fallback
+        async function streamWithFallback(prompt: string, onChunk: (t: string) => void): Promise<string> {
+          for (const modelName of MODEL_FALLBACKS) {
+            try {
+              const m = getModel(systemPrompt, modelName)
+              const result = await m.generateContentStream(prompt)
+              let full = ''
+              for await (const chunk of result.stream) {
+                const text = chunk.text()
+                full += text
+                onChunk(text)
+              }
+              return stripCodeFences(full)
+            } catch (e: any) {
+              if (e?.status === 503 || e?.status === 404 || e?.httpStatusCode === 503) continue
+              throw e
+            }
+          }
+          throw new Error('All models unavailable. Please try again.')
+        }
+
         // ── Step 2: Generate page shell ───────────────────────────────────
         send('status', { stage: 'shell', message: 'Setting up the page design...' })
-
-        const shellStream = await model.generateContentStream(buildPageShellPrompt(ctx, outline))
-        let shell = ''
-        for await (const chunk of shellStream.stream) {
-          const text = chunk.text()
-          shell += text
-          send('html_chunk', { chunk: text })
-        }
-        shell = stripCodeFences(shell)
+        const shell = await streamWithFallback(
+          buildPageShellPrompt(ctx, outline),
+          (t) => send('html_chunk', { chunk: t })
+        )
 
         // ── Step 3: Generate each stage ───────────────────────────────────
         const stageSections: string[] = []
         let accumulatedHtml = shell
 
         for (const stage of outline.stages as StageOutline[]) {
-          send('status', {
-            stage: `stage_${stage.id}`,
-            message: `Building stage ${stage.id}: ${stage.title}...`,
-          })
-
-          const stageStream = await model.generateContentStream(
-            buildStagePrompt(ctx, outline, stage, accumulatedHtml)
+          send('status', { stage: `stage_${stage.id}`, message: `Building stage ${stage.id}: ${stage.title}...` })
+          const stageHtml = await streamWithFallback(
+            buildStagePrompt(ctx, outline, stage, accumulatedHtml),
+            (t) => send('html_chunk', { chunk: t })
           )
-
-          let stageHtml = ''
-          for await (const chunk of stageStream.stream) {
-            const text = chunk.text()
-            stageHtml += text
-            send('html_chunk', { chunk: text })
-          }
-          stageHtml = stripCodeFences(stageHtml)
           stageSections.push(stageHtml)
           accumulatedHtml += stageHtml
         }
 
         // ── Step 4: Generate quiz ─────────────────────────────────────────
         send('status', { stage: 'quiz', message: 'Generating quiz...' })
-
-        const quizStream = await model.generateContentStream(buildQuizPrompt(ctx, outline))
-        let quizHtml = ''
-        for await (const chunk of quizStream.stream) {
-          const text = chunk.text()
-          quizHtml += text
-          send('html_chunk', { chunk: text })
-        }
-        quizHtml = stripCodeFences(quizHtml)
+        const quizHtml = await streamWithFallback(
+          buildQuizPrompt(ctx, outline),
+          (t) => send('html_chunk', { chunk: t })
+        )
 
         // ── Step 5: Close page ────────────────────────────────────────────
         send('status', { stage: 'close', message: 'Finishing up...' })
-
-        const closeResult = await model.generateContent(buildPageClosePrompt())
-        const closeHtml = stripCodeFences(closeResult.response.text())
-        send('html_chunk', { chunk: closeHtml })
+        let closeHtml = ''
+        for (const modelName of MODEL_FALLBACKS) {
+          try {
+            const m = getModel(systemPrompt, modelName)
+            const r = await m.generateContent(buildPageClosePrompt())
+            closeHtml = stripCodeFences(r.response.text())
+            send('html_chunk', { chunk: closeHtml })
+            break
+          } catch (e: any) {
+            if (e?.status === 503 || e?.status === 404 || e?.httpStatusCode === 503) continue
+            throw e
+          }
+        }
 
         const finalHtml = assembleFinalLesson(shell, stageSections, quizHtml, closeHtml)
 
