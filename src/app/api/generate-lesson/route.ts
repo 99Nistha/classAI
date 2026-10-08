@@ -88,9 +88,15 @@ QUALITY BAR:
 - Think of what Visible Body, PhET, or Khan Academy would build for this exact topic
 - Every interactive element must ACTUALLY WORK — no broken links, no placeholder buttons
 - Labels must appear when clicked or hovered (real popups, not alerts)
-- Zoom must work (scroll wheel), pan must work (drag), 3D orbit must work where relevant
 - Animations must run smoothly — no janky transitions
 - Be creative with the format: 3D scene, animated SVG diagram, interactive cross-section, particle simulation — whatever BEST fits this topic
+
+NAVIGATION — always implement all three, no exceptions:
+- Scroll wheel → zoom in / zoom out (smooth, feels natural)
+- Click + drag → pan around the scene (left, right, up, down)
+- No forced auto-rotation or 360 spin — the user controls movement
+- For 3D: use OrbitControls with autoRotate: false, enableDamping: true for smoothness
+- Show a one-line hint at the top of the visual: "Scroll to zoom · Drag to pan"
 
 CONTENT:
 - Main visual section (full width, generous height)
