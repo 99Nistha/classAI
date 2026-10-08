@@ -4,15 +4,16 @@ import { useState } from 'react'
 import Link from 'next/link'
 import StatusBadge, { NEXT } from './StatusBadge'
 import { setTopicStatus, updateTopic, deleteTopic } from '@/lib/queries/topics'
-import type { Topic } from '@/types'
+import type { Topic, Lesson } from '@/types'
 
 interface Props {
   topic: Topic
   classId: string
+  lesson?: Lesson | null
   onChanged: () => void
 }
 
-export default function TopicRow({ topic, classId, onChanged }: Props) {
+export default function TopicRow({ topic, classId, lesson, onChanged }: Props) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [editing, setEditing] = useState(false)
   const [title, setTitle] = useState(topic.title)
@@ -61,6 +62,17 @@ export default function TopicRow({ topic, classId, onChanged }: Props) {
             <span className="text-sm text-gray-800 truncate block">{topic.title}</span>
           </div>
 
+          {/* Lesson status badge */}
+          {lesson && (
+            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+              lesson.status === 'shared'
+                ? 'bg-green-100 text-green-700'
+                : 'bg-amber-100 text-amber-700'
+            }`}>
+              {lesson.status === 'shared' ? 'Shared' : 'Draft'}
+            </span>
+          )}
+
           <StatusBadge status={topic.status} onToggle={handleStatusToggle} />
 
           <Link
@@ -70,7 +82,7 @@ export default function TopicRow({ topic, classId, onChanged }: Props) {
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
             </svg>
-            Create visual
+            {lesson ? 'Edit visual' : 'Create visual'}
           </Link>
 
           <div className="relative">

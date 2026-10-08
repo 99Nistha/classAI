@@ -91,10 +91,25 @@ export default function ClassPage({ params }: Props) {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
           </Link>
-          <div>
+          <div className="flex-1 min-w-0">
             <h1 className="text-lg font-bold text-gray-900">{cls.name}</h1>
             <p className="text-xs text-gray-500">Grade {cls.grade} · {cls.subject}</p>
           </div>
+          {/* Progress summary */}
+          {Object.keys(topicsByChapter).length > 0 && (() => {
+            const allTopics = Object.values(topicsByChapter).flat()
+            const covered = allTopics.filter((t) => t.status === 'covered').length
+            const total = allTopics.length
+            const pct = total > 0 ? Math.round((covered / total) * 100) : 0
+            return (
+              <div className="text-right hidden sm:block">
+                <p className="text-xs text-gray-500">{covered}/{total} covered</p>
+                <div className="mt-1 w-24 h-1.5 rounded-full bg-gray-100 overflow-hidden">
+                  <div className="h-full rounded-full bg-green-500 transition-all" style={{ width: `${pct}%` }} />
+                </div>
+              </div>
+            )
+          })()}
         </div>
       </header>
 

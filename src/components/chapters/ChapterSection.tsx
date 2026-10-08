@@ -1,10 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import TopicRow from '@/components/topics/TopicRow'
 import { updateChapter, deleteChapter } from '@/lib/queries/chapters'
 import { addTopic } from '@/lib/queries/topics'
-import type { Chapter, Topic } from '@/types'
+import { createClient } from '@/lib/supabase/client'
+import type { Chapter, Topic, Lesson } from '@/types'
 
 interface Props {
   chapter: Chapter
@@ -21,6 +22,23 @@ export default function ChapterSection({ chapter, topics, classId, onChanged }: 
   const [addingTopic, setAddingTopic] = useState(false)
   const [newTopic, setNewTopic] = useState('')
   const [loading, setLoading] = useState(false)
+  const [lessonsByTopic, setLessonsByTopic] = useState<Record<string, Lesson>>({})
+
+  // Load lessons for all topics in this chapter
+  useEffect(() => {
+    if (topics.length === 0) return
+    const supabase = createClient()
+    supabase
+      .from('lessons')
+      .select('*')
+      .in('topic_id', topics.map((t) => t.id))
+      .then(({ data }) => {
+        if (!data) return
+        const map: Record<string, Lesson> = {}
+        data.forEach((l) => { map[l.topic_id] = l })
+        setLessonsByTopic(map)
+      })
+  }, [topics])
 
   async function handleRenameChapter(e: React.FormEvent) {
     e.preventDefault()
@@ -123,7 +141,13 @@ export default function ChapterSection({ chapter, topics, classId, onChanged }: 
             <p className="text-sm text-gray-400 px-3 py-2">No topics yet.</p>
           )}
           {topics.map((topic) => (
-            <TopicRow key={topic.id} topic={topic} classId={classId} onChanged={onChanged} />
+            <TopicRow
+              key={topic.id}
+              topic={topic}
+              classId={classId}
+              lesson={lessonsByTopic[topic.id] ?? null}
+              onChanged={onChanged}
+            />
           ))}
 
           {addingTopic ? (
