@@ -30,51 +30,111 @@ Topic: ${ctx.topicTitle}
 Chapter: ${ctx.chapterTitle}
 Subject: ${ctx.subject}, Grade ${ctx.grade}${notes}${instruction}
 
-═══ CRITICAL RULES ═══
-1. Output ONLY raw HTML starting with <!DOCTYPE html> — NO markdown, NO code fences, NO explanation
-2. All JS/CSS must be inline. ONLY allowed external scripts:
-   - Google Fonts: https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap
-   - Three.js: https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js
-   - OrbitControls: https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js
-3. Scripts MUST load before use — put Three.js + OrbitControls in <head> with defer, initialize in window.onload or DOMContentLoaded
-4. ALL animations and interactions must ACTUALLY WORK — test your logic mentally before writing
+═══ OUTPUT RULE ═══
+Output ONLY raw HTML starting with <!DOCTYPE html> — NO markdown, NO code fences, NO explanation text before or after.
 
-═══ INTERACTIVITY REQUIREMENTS ═══
-For Biology / Photosynthesis / Cell topics — BUILD A THREE.JS 3D SCENE:
-  • Create a renderer, scene, camera inside window.addEventListener('DOMContentLoaded', ...)
-  • Add OrbitControls: controls = new THREE.OrbitControls(camera, renderer.domElement)
-  • Animate with requestAnimationFrame loop
-  • Use SphereGeometry, TorusGeometry, CylinderGeometry for molecules/organelles
-  • Add smooth rotation animation
-  • Add clickable parts: raycaster on click → show info panel
-  • Lighting: new THREE.AmbientLight(0xffffff, 0.5) + new THREE.DirectionalLight(0xffffff, 1)
-  • Show "🖱 Drag to rotate · Scroll to zoom · Click parts to learn" hint
+═══ MANDATORY: THREE.JS 3D INTERACTIVE SCENE ═══
+Every lesson MUST have a Three.js 3D scene. Use EXACTLY this boilerplate (copy it, fill in the CUSTOMIZE sections):
 
-For other topics — BUILD RICH SVG + CSS ANIMATIONS:
-  • Animated flowcharts with SVG paths and CSS stroke-dashoffset animations
-  • Step-by-step reveals triggered by scroll (IntersectionObserver)
-  • Hover effects that reveal detailed info panels
-  • Click-to-expand sections
+HTML structure:
+<div id="scene-wrap" style="position:relative;width:100%;height:500px;background:#0a0a1a;border-radius:16px;overflow:hidden;">
+  <div id="scene-container" style="width:100%;height:500px;"></div>
+  <div id="scene-hint" style="position:absolute;bottom:12px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.6);color:#aaa;font-size:12px;padding:6px 14px;border-radius:20px;pointer-events:none;">🖱 Drag to rotate · Scroll to zoom · Click to learn</div>
+  <div id="info-panel" style="display:none;position:absolute;top:12px;right:12px;background:rgba(15,17,23,0.95);border:1px solid #4ade80;border-radius:12px;padding:16px;max-width:220px;color:#e8eaf6;">
+    <div id="info-title" style="font-weight:700;color:#4ade80;margin-bottom:6px;font-size:14px;"></div>
+    <div id="info-body" style="font-size:13px;line-height:1.5;"></div>
+    <button onclick="document.getElementById('info-panel').style.display='none'" style="margin-top:10px;background:none;border:1px solid #4ade80;color:#4ade80;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px;">Close</button>
+  </div>
+</div>
+
+Scripts (place just before </body>):
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+(function() {
+  var container = document.getElementById('scene-container');
+  var W = container.offsetWidth || 800, H = 500;
+  var renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(W, H);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  container.appendChild(renderer.domElement);
+
+  var scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x0a0a1a);
+
+  var camera = new THREE.PerspectiveCamera(60, W / H, 0.1, 100);
+  camera.position.set(0, 2, 8);  /* CUSTOMIZE: adjust for your scene */
+  camera.lookAt(0, 0, 0);
+
+  var controls = new THREE.OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.05;
+
+  scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+  var dLight = new THREE.DirectionalLight(0xffffff, 1);
+  dLight.position.set(5, 10, 7);
+  scene.add(dLight);
+
+  /* ── CUSTOMIZE: create topic-specific 3D objects ──
+     Use SphereGeometry, BoxGeometry, TorusGeometry, CylinderGeometry, etc.
+     MeshPhongMaterial or MeshStandardMaterial with colors matching the topic.
+     Example for a cell: nucleus (large sphere), mitochondria (ellipsoids), membrane (torus)
+     Example for solar system: sun (sphere), planets (smaller spheres orbiting)
+     Example for atom: nucleus (sphere), electron shells (torus rings), electrons (tiny spheres)
+     Add each mesh to scene with: scene.add(mesh) */
+
+  /* ── CUSTOMIZE: clickable objects array ── */
+  var clickables = []; /* push { mesh: mesh, label: 'Name', info: 'Description' } */
+
+  var raycaster = new THREE.Raycaster();
+  var mouse = new THREE.Vector2();
+  renderer.domElement.addEventListener('click', function(e) {
+    var rect = renderer.domElement.getBoundingClientRect();
+    mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+    raycaster.setFromCamera(mouse, camera);
+    var hits = raycaster.intersectObjects(clickables.map(function(c) { return c.mesh; }));
+    if (hits.length > 0) {
+      var hit = clickables.find(function(c) { return c.mesh === hits[0].object; });
+      if (hit) {
+        document.getElementById('info-title').textContent = hit.label;
+        document.getElementById('info-body').textContent = hit.info;
+        document.getElementById('info-panel').style.display = 'block';
+      }
+    }
+  });
+
+  (function animate() {
+    requestAnimationFrame(animate);
+    /* CUSTOMIZE: add rotation/orbit animations here, e.g. mesh.rotation.y += 0.005; */
+    controls.update();
+    renderer.render(scene, camera);
+  })();
+
+  window.addEventListener('resize', function() {
+    W = container.offsetWidth;
+    camera.aspect = W / H;
+    camera.updateProjectionMatrix();
+    renderer.setSize(W, H);
+  });
+})();
+</script>
 
 ═══ PAGE STRUCTURE ═══
 1. Sticky header (lesson title + subject badge)
-2. Hero section (big visual hook — animated stat or question)
-3. Interactive 3D scene OR animated diagram (full-width, 500px tall)
-4. Step-by-step breakdown (3–4 cards, each with icon + hover effect)
-5. "Did you know?" fun facts panel (click to reveal)
-6. 4-question quiz (multiple choice, instant color feedback green/red + explanation)
-7. Footer "Made with ClassAI"
+2. Hero section (animated CSS — big bold stat, question, or key concept)
+3. The Three.js 3D scene (use the boilerplate above, customize objects for the topic)
+4. Step-by-step breakdown (3–4 cards with icons, hover effects)
+5. "Did you know?" fun facts (click to reveal hidden text)
+6. 4-question multiple choice quiz (instant green/red feedback + explanation text)
+7. Footer: "Made with ClassAI"
 
 ═══ DESIGN ═══
-- CSS variables: --bg:#0f1117, --text:#e8eaf6, --accent:#4ade80, --card:#1e2130, --muted:#6b7280
-- Beautiful dark theme by default
-- Smooth scroll behavior
-- Card hover: translateY(-4px) + box-shadow
-- Gradient accents
-- Responsive (mobile 320px → desktop)
+CSS variables: --bg:#0f1117; --text:#e8eaf6; --accent:#4ade80; --card:#1e2130; --muted:#6b7280
+Dark theme. Smooth scroll. Card hover: translateY(-4px) + box-shadow. Mobile responsive (320px → desktop).
 
 ═══ ACCURACY ═══
-All facts 100% correct for Grade ${ctx.grade} ${ctx.subject}. Use proper scientific terminology.`
+All facts 100% correct for Grade ${ctx.grade} ${ctx.subject}. Proper scientific terminology.`
 }
 
 async function callWithFallback(prompt: string, systemPrompt: string): Promise<string> {
