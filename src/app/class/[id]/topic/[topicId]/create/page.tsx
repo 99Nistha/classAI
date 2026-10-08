@@ -399,7 +399,7 @@ export default function CreateVisualPage({ params }: Props) {
                   visualStyle ?? 'flow',
                   includeQuiz ?? true,
                   focusNote,
-                  originalInstruction ?? chatInput.trim() || topic?.title ?? '',
+                  (originalInstruction ?? chatInput.trim()) || (topic?.title ?? ''),
                 )}
                 disabled={generating || chatLoading}
                 className="w-full rounded-xl bg-violet-600 px-3 py-2.5 text-sm font-semibold text-white hover:bg-violet-500 disabled:opacity-40 transition-colors flex items-center justify-center gap-2"
