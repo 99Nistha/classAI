@@ -18,7 +18,7 @@ const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY!)
 
 function getModel(systemPrompt: string) {
   return genAI.getGenerativeModel({
-    model: 'gemini-2.0-flash',
+    model: 'gemini-3.8-flash',
     systemInstruction: systemPrompt,
   })
 }
