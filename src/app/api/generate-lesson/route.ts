@@ -24,68 +24,98 @@ function buildFullLessonPrompt(ctx: {
   const notes = ctx.teacherNotes ? `\nTeacher notes: ${ctx.teacherNotes}` : ''
   const instruction = ctx.teacherInstruction ? `\nTeacher instruction: ${ctx.teacherInstruction}` : ''
 
-  return `Create an EXCEPTIONAL, fully interactive educational web page for:
+  return `Create a fully interactive 3D educational web page.
 
-Topic: ${ctx.topicTitle}
-Chapter: ${ctx.chapterTitle}
-Subject: ${ctx.subject}, Grade ${ctx.grade}${notes}${instruction}
-
+TOPIC: ${ctx.topicTitle}
+CHAPTER: ${ctx.chapterTitle}
+SUBJECT: ${ctx.subject}, Grade ${ctx.grade}${notes}
+${instruction ? `\n⚡ TEACHER INSTRUCTION — FOLLOW THIS PRECISELY: ${ctx.teacherInstruction}\n` : ''}
 ═══ OUTPUT RULE ═══
-Output ONLY raw HTML starting with <!DOCTYPE html> — NO markdown, NO code fences, NO explanation text before or after.
+Output ONLY raw HTML starting with <!DOCTYPE html>. No markdown, no code fences, no explanation.
 
-═══ MANDATORY: THREE.JS 3D INTERACTIVE SCENE ═══
-Every lesson MUST have a Three.js 3D scene. Use EXACTLY this boilerplate (copy it, fill in the CUSTOMIZE sections):
+═══ IF TEACHER INSTRUCTION MENTIONS A FLOW / PROCESS / END-TO-END ═══
+Visualize THE COMPLETE PROCESS in the 3D scene — every single stage from start to finish.
+For Photosynthesis: show Sun (glowing yellow sphere) → Leaf with stomata (flat green mesh) →
+  CO2 molecules entering (animated blue spheres floating in) → Water from roots (animated blue
+  line rising up) → Chloroplast (green oval inside leaf) → Light reactions producing ATP + NADPH
+  → Calvin Cycle producing G3P → Glucose output → O2 molecules floating out.
+  Place them in a 3D scene arranged so the viewer sees the whole chain.
 
-HTML structure:
-<div id="scene-wrap" style="position:relative;width:100%;height:500px;background:#0a0a1a;border-radius:16px;overflow:hidden;">
-  <div id="scene-container" style="width:100%;height:500px;"></div>
-  <div id="scene-hint" style="position:absolute;bottom:12px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.6);color:#aaa;font-size:12px;padding:6px 14px;border-radius:20px;pointer-events:none;">🖱 Drag to rotate · Scroll to zoom · Click to learn</div>
-  <div id="info-panel" style="display:none;position:absolute;top:12px;right:12px;background:rgba(15,17,23,0.95);border:1px solid #4ade80;border-radius:12px;padding:16px;max-width:220px;color:#e8eaf6;">
-    <div id="info-title" style="font-weight:700;color:#4ade80;margin-bottom:6px;font-size:14px;"></div>
-    <div id="info-body" style="font-size:13px;line-height:1.5;"></div>
-    <button onclick="document.getElementById('info-panel').style.display='none'" style="margin-top:10px;background:none;border:1px solid #4ade80;color:#4ade80;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px;">Close</button>
+═══ MANDATORY: THREE.JS 3D SCENE WITH VISIBLE LABELS ═══
+Copy this EXACT boilerplate. Fill in only the /* CUSTOMIZE */ sections.
+
+<!-- SCENE HTML — put in body -->
+<div id="scene-wrap" style="position:relative;width:100%;height:560px;background:#060a14;border-radius:16px;overflow:hidden;margin:24px 0;">
+  <div id="scene-container" style="width:100%;height:560px;"></div>
+  <!-- label layer — floats above canvas -->
+  <div id="label-layer" style="position:absolute;top:0;left:0;width:100%;height:560px;pointer-events:none;overflow:hidden;"></div>
+  <!-- toggle + hint bar -->
+  <div style="position:absolute;bottom:0;left:0;right:0;display:flex;align-items:center;justify-content:space-between;padding:10px 16px;background:rgba(0,0,0,0.5);">
+    <span style="color:#888;font-size:12px;">🖱 Drag · Scroll to zoom · Click to learn</span>
+    <button id="toggle-labels" style="background:#1e2130;border:1px solid #4ade80;color:#4ade80;padding:5px 14px;border-radius:20px;font-size:12px;cursor:pointer;">Hide Labels</button>
+  </div>
+  <!-- info panel -->
+  <div id="info-panel" style="display:none;position:absolute;top:12px;right:12px;background:rgba(10,12,20,0.97);border:1px solid #4ade80;border-radius:12px;padding:16px;max-width:240px;color:#e8eaf6;z-index:10;">
+    <div id="info-title" style="font-weight:700;color:#4ade80;margin-bottom:6px;font-size:15px;"></div>
+    <div id="info-body" style="font-size:13px;line-height:1.6;"></div>
+    <button onclick="document.getElementById('info-panel').style.display='none'" style="margin-top:10px;background:none;border:1px solid #4ade80;color:#4ade80;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px;">✕ Close</button>
   </div>
 </div>
 
-Scripts (place just before </body>):
+<!-- SCRIPTS — place just before </body> -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 <script>
 (function() {
   var container = document.getElementById('scene-container');
-  var W = container.offsetWidth || 800, H = 500;
+  var labelLayer = document.getElementById('label-layer');
+  var W = container.offsetWidth || 900, H = 560;
+
   var renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setSize(W, H);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   container.appendChild(renderer.domElement);
 
   var scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x0a0a1a);
+  scene.background = new THREE.Color(0x060a14);
 
-  var camera = new THREE.PerspectiveCamera(60, W / H, 0.1, 100);
-  camera.position.set(0, 2, 8);  /* CUSTOMIZE: adjust for your scene */
+  var camera = new THREE.PerspectiveCamera(55, W / H, 0.1, 200);
+  /* CUSTOMIZE camera position to frame your full scene */
+  camera.position.set(0, 4, 18);
   camera.lookAt(0, 0, 0);
 
   var controls = new THREE.OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
-  controls.dampingFactor = 0.05;
+  controls.dampingFactor = 0.06;
 
   scene.add(new THREE.AmbientLight(0xffffff, 0.5));
-  var dLight = new THREE.DirectionalLight(0xffffff, 1);
-  dLight.position.set(5, 10, 7);
-  scene.add(dLight);
+  var sun2 = new THREE.DirectionalLight(0xffffff, 1.2);
+  sun2.position.set(10, 20, 10);
+  scene.add(sun2);
+  var fill = new THREE.DirectionalLight(0x8888ff, 0.4);
+  fill.position.set(-10, -5, -10);
+  scene.add(fill);
 
-  /* ── CUSTOMIZE: create topic-specific 3D objects ──
-     Use SphereGeometry, BoxGeometry, TorusGeometry, CylinderGeometry, etc.
-     MeshPhongMaterial or MeshStandardMaterial with colors matching the topic.
-     Example for a cell: nucleus (large sphere), mitochondria (ellipsoids), membrane (torus)
-     Example for solar system: sun (sphere), planets (smaller spheres orbiting)
-     Example for atom: nucleus (sphere), electron shells (torus rings), electrons (tiny spheres)
-     Add each mesh to scene with: scene.add(mesh) */
+  /* ── LABEL SYSTEM — creates floating HTML labels above each mesh ── */
+  var labelElements = [];
+  var labelsVisible = true;
+  function addLabel(mesh, text, color) {
+    color = color || '#4ade80';
+    var el = document.createElement('div');
+    el.textContent = text;
+    el.style.cssText = 'position:absolute;background:rgba(0,0,0,0.75);color:' + color + ';padding:4px 10px;border-radius:20px;font-size:12px;font-weight:600;white-space:nowrap;border:1px solid ' + color + ';font-family:sans-serif;transform:translate(-50%,-50%);';
+    labelLayer.appendChild(el);
+    labelElements.push({ mesh: mesh, el: el });
+    return el;
+  }
+  document.getElementById('toggle-labels').addEventListener('click', function() {
+    labelsVisible = !labelsVisible;
+    this.textContent = labelsVisible ? 'Hide Labels' : 'Show Labels';
+    labelElements.forEach(function(l) { l.el.style.display = labelsVisible ? 'block' : 'none'; });
+  });
 
-  /* ── CUSTOMIZE: clickable objects array ── */
-  var clickables = []; /* push { mesh: mesh, label: 'Name', info: 'Description' } */
-
+  /* ── CLICKABLE OBJECTS ── */
+  var clickables = []; /* push { mesh, label, info } */
   var raycaster = new THREE.Raycaster();
   var mouse = new THREE.Vector2();
   renderer.domElement.addEventListener('click', function(e) {
@@ -93,22 +123,55 @@ Scripts (place just before </body>):
     mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
     mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
     raycaster.setFromCamera(mouse, camera);
-    var hits = raycaster.intersectObjects(clickables.map(function(c) { return c.mesh; }));
-    if (hits.length > 0) {
-      var hit = clickables.find(function(c) { return c.mesh === hits[0].object; });
-      if (hit) {
-        document.getElementById('info-title').textContent = hit.label;
-        document.getElementById('info-body').textContent = hit.info;
-        document.getElementById('info-panel').style.display = 'block';
-      }
+    var hits = raycaster.intersectObjects(clickables.map(function(c){return c.mesh;}));
+    if (hits.length) {
+      var h = clickables.find(function(c){return c.mesh===hits[0].object;});
+      if (h) { document.getElementById('info-title').textContent=h.label; document.getElementById('info-body').textContent=h.info; document.getElementById('info-panel').style.display='block'; }
     }
   });
 
+  /* ════════════════════════════════════════════════════
+     CUSTOMIZE: Build your topic-specific 3D scene here.
+
+     For Photosynthesis full flow, create objects like:
+       - Large glowing yellow sphere for Sun (position far top-left)
+       - Flat green plane/box for Leaf (center)
+       - Green oval sphere inside leaf for Chloroplast
+       - Blue spheres animated floating into leaf for CO2
+       - Animated blue line/cylinder rising from bottom for Water
+       - Animated particles floating out for O2
+       - Small sphere for Glucose output
+       - Use arrows (CylinderGeometry thin, rotated) between stages
+
+     After creating each mesh, call:
+       addLabel(mesh, 'Name', '#colorHex');
+       clickables.push({ mesh, label: 'Name', info: 'Detailed explanation...' });
+     ════════════════════════════════════════════════════ */
+
+  var clock = new THREE.Clock();
+  var vec3 = new THREE.Vector3();
+
   (function animate() {
     requestAnimationFrame(animate);
-    /* CUSTOMIZE: add rotation/orbit animations here, e.g. mesh.rotation.y += 0.005; */
+    var t = clock.getElapsedTime();
+
+    /* CUSTOMIZE: animations (rotation, oscillation, orbit) using t */
+
     controls.update();
     renderer.render(scene, camera);
+
+    /* Update label positions */
+    if (labelsVisible) {
+      labelElements.forEach(function(l) {
+        l.mesh.getWorldPosition(vec3);
+        vec3.project(camera);
+        var x = (vec3.x * 0.5 + 0.5) * W;
+        var y = (-vec3.y * 0.5 + 0.5) * H;
+        l.el.style.left = x + 'px';
+        l.el.style.top = (y - 30) + 'px'; /* offset above mesh */
+        l.el.style.display = (vec3.z < 1) ? 'block' : 'none';
+      });
+    }
   })();
 
   window.addEventListener('resize', function() {
@@ -122,16 +185,16 @@ Scripts (place just before </body>):
 
 ═══ PAGE STRUCTURE ═══
 1. Sticky header (lesson title + subject badge)
-2. Hero section (animated CSS — big bold stat, question, or key concept)
-3. The Three.js 3D scene (use the boilerplate above, customize objects for the topic)
-4. Step-by-step breakdown (3–4 cards with icons, hover effects)
-5. "Did you know?" fun facts (click to reveal hidden text)
-6. 4-question multiple choice quiz (instant green/red feedback + explanation text)
+2. Hero section (bold animated text — key question or stat)
+3. The Three.js scene above (full-width, labels visible, the COMPLETE process flow)
+4. Step-by-step breakdown of the process (4–6 cards for a flow topic, with icon + hover effect)
+5. "Did you know?" fun facts (click to reveal)
+6. 4-question quiz (multiple choice, instant green/red feedback + explanation)
 7. Footer: "Made with ClassAI"
 
 ═══ DESIGN ═══
-CSS variables: --bg:#0f1117; --text:#e8eaf6; --accent:#4ade80; --card:#1e2130; --muted:#6b7280
-Dark theme. Smooth scroll. Card hover: translateY(-4px) + box-shadow. Mobile responsive (320px → desktop).
+CSS vars: --bg:#0f1117; --text:#e8eaf6; --accent:#4ade80; --card:#1e2130; --muted:#6b7280
+Dark theme. Smooth scroll. Card hover translateY(-4px). Mobile responsive.
 
 ═══ ACCURACY ═══
 All facts 100% correct for Grade ${ctx.grade} ${ctx.subject}. Proper scientific terminology.`
