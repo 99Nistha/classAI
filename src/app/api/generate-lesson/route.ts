@@ -24,180 +24,89 @@ function buildFullLessonPrompt(ctx: {
   const notes = ctx.teacherNotes ? `\nTeacher notes: ${ctx.teacherNotes}` : ''
   const instruction = ctx.teacherInstruction ? `\nTeacher instruction: ${ctx.teacherInstruction}` : ''
 
-  return `Create a fully interactive 3D educational web page.
+  return `Create a fully interactive animated educational web page.
 
 TOPIC: ${ctx.topicTitle}
 CHAPTER: ${ctx.chapterTitle}
 SUBJECT: ${ctx.subject}, Grade ${ctx.grade}${notes}
-${instruction ? `\n⚡ TEACHER INSTRUCTION — FOLLOW THIS PRECISELY: ${ctx.teacherInstruction}\n` : ''}
+${instruction ? `\n⚡ TEACHER INSTRUCTION — HIGHEST PRIORITY: ${ctx.teacherInstruction}\n` : ''}
 ═══ OUTPUT RULE ═══
-Output ONLY raw HTML starting with <!DOCTYPE html>. No markdown, no code fences, no explanation.
+Output ONLY raw HTML starting with <!DOCTYPE html>. No markdown, no code fences.
 
-═══ IF TEACHER INSTRUCTION MENTIONS A FLOW / PROCESS / END-TO-END ═══
-Visualize THE COMPLETE PROCESS in the 3D scene — every single stage from start to finish.
-For Photosynthesis: show Sun (glowing yellow sphere) → Leaf with stomata (flat green mesh) →
-  CO2 molecules entering (animated blue spheres floating in) → Water from roots (animated blue
-  line rising up) → Chloroplast (green oval inside leaf) → Light reactions producing ATP + NADPH
-  → Calvin Cycle producing G3P → Glucose output → O2 molecules floating out.
-  Place them in a 3D scene arranged so the viewer sees the whole chain.
+═══ MAIN VISUAL: HTML5 CANVAS ANIMATION (MANDATORY — no external libraries) ═══
 
-═══ MANDATORY: THREE.JS 3D SCENE WITH VISIBLE LABELS ═══
-Copy this EXACT boilerplate. Fill in only the /* CUSTOMIZE */ sections.
+Write a complete, self-contained animated canvas visualization using ONLY the Canvas 2D API
+and requestAnimationFrame. NO Three.js, NO external scripts for the animation.
 
-<!-- SCENE HTML — put in body -->
-<div id="scene-wrap" style="position:relative;width:100%;height:560px;background:#060a14;border-radius:16px;overflow:hidden;margin:24px 0;">
-  <div id="scene-container" style="width:100%;height:560px;"></div>
-  <!-- label layer — floats above canvas -->
-  <div id="label-layer" style="position:absolute;top:0;left:0;width:100%;height:560px;pointer-events:none;overflow:hidden;"></div>
-  <!-- toggle + hint bar -->
-  <div style="position:absolute;bottom:0;left:0;right:0;display:flex;align-items:center;justify-content:space-between;padding:10px 16px;background:rgba(0,0,0,0.5);">
-    <span style="color:#888;font-size:12px;">🖱 Drag · Scroll to zoom · Click to learn</span>
-    <button id="toggle-labels" style="background:#1e2130;border:1px solid #4ade80;color:#4ade80;padding:5px 14px;border-radius:20px;font-size:12px;cursor:pointer;">Hide Labels</button>
-  </div>
-  <!-- info panel -->
-  <div id="info-panel" style="display:none;position:absolute;top:12px;right:12px;background:rgba(10,12,20,0.97);border:1px solid #4ade80;border-radius:12px;padding:16px;max-width:240px;color:#e8eaf6;z-index:10;">
-    <div id="info-title" style="font-weight:700;color:#4ade80;margin-bottom:6px;font-size:15px;"></div>
-    <div id="info-body" style="font-size:13px;line-height:1.6;"></div>
-    <button onclick="document.getElementById('info-panel').style.display='none'" style="margin-top:10px;background:none;border:1px solid #4ade80;color:#4ade80;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px;">✕ Close</button>
-  </div>
+The canvas must be 100% width and 600px tall. Write ALL drawing code completely — no TODOs,
+no placeholders. Every component must be drawn with real canvas commands.
+
+For PHOTOSYNTHESIS or any FLOW/PROCESS topic, draw the COMPLETE end-to-end flow:
+
+  ┌──────────────────────────────────────────────────────────────────────────────────┐
+  │  LAYOUT (left to right across the canvas):                                       │
+  │                                                                                  │
+  │  SUN ──rays──► LEAF ──── inside: [CHLOROPLAST → LIGHT REACTIONS → CALVIN CYCLE] │
+  │   ↑                ↑                                    │          │             │
+  │  (yellow glow)   CO₂ molecules floating in            ATP+NADPH  G3P            │
+  │                  H₂O line rising from ROOTS             │          │             │
+  │                                                         ▼          ▼             │
+  │                                              O₂ bubbles out     GLUCOSE out      │
+  └──────────────────────────────────────────────────────────────────────────────────┘
+
+  Every element must be:
+  - Drawn with ctx.arc / ctx.fillRect / ctx.bezierCurveTo / etc.
+  - Labeled with ctx.fillText() right on the canvas (bold, readable)
+  - Animated: sun rays rotate, CO₂ floats in, H₂O pulses up, O₂ bubbles rise, particles travel arrows
+  - Connected by animated dashed arrows (ctx.setLineDash, lineDashOffset decrements each frame)
+  - Clickable: maintain a hitZones array, on canvas click show an overlay info panel
+
+  DRAW EACH of these for photosynthesis (adjust colors to be vivid and distinct):
+  • Sun: yellow radial gradient circle, 8 rotating ray lines, r≈60px, position top-left
+  • Light rays: yellow dashed lines animating from sun toward leaf
+  • Leaf: large rounded green bezier shape, center of canvas, draw 3 veins
+  • CO₂ molecules: 3 small blue labeled circles, x-position animated leftward into leaf
+  • Roots: brown forked lines at bottom-center
+  • Water: blue dashed vertical line animating upward from roots to leaf
+  • Chloroplast: green oval inside the leaf, label inside
+  • Light Reactions box: purple rounded rect, label "Light Reactions", inside chloroplast area
+  • Calvin Cycle box: teal rounded rect below, label "Calvin Cycle", animated circular small arrows
+  • ATP/NADPH: small orange label animating between light reactions and calvin cycle
+  • O₂: green circles floating upward from top of leaf, each has "O₂" label
+  • Glucose: orange hexagon moving rightward from calvin cycle, label "C₆H₁₂O₆"
+  • Flow arrows: thick dashed arrows between every stage, animated lineDashOffset
+
+For NON-FLOW topics: create an equally rich animated diagram specific to that topic.
+
+INFO PANEL HTML (place right after the canvas tag, BEFORE the script):
+<div id="infoPanel" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#0f1117;border:2px solid #4ade80;border-radius:16px;padding:24px;max-width:340px;width:90%;z-index:9999;color:#e8eaf6;box-shadow:0 20px 60px rgba(0,0,0,0.9);">
+  <h3 id="infoPanelTitle" style="color:#4ade80;margin:0 0 12px;font-size:18px;"></h3>
+  <p id="infoPanelText" style="margin:0;line-height:1.7;font-size:14px;"></p>
+  <button onclick="document.getElementById('infoPanel').style.display='none'" style="margin-top:18px;background:#4ade80;color:#000;border:none;padding:9px 22px;border-radius:8px;cursor:pointer;font-weight:700;font-size:14px;">✕ Close</button>
 </div>
 
-<!-- SCRIPTS — place just before </body> -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
-<script>
-(function() {
-  var container = document.getElementById('scene-container');
-  var labelLayer = document.getElementById('label-layer');
-  var W = container.offsetWidth || 900, H = 560;
-
-  var renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setSize(W, H);
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  container.appendChild(renderer.domElement);
-
-  var scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x060a14);
-
-  var camera = new THREE.PerspectiveCamera(55, W / H, 0.1, 200);
-  /* CUSTOMIZE camera position to frame your full scene */
-  camera.position.set(0, 4, 18);
-  camera.lookAt(0, 0, 0);
-
-  var controls = new THREE.OrbitControls(camera, renderer.domElement);
-  controls.enableDamping = true;
-  controls.dampingFactor = 0.06;
-
-  scene.add(new THREE.AmbientLight(0xffffff, 0.5));
-  var sun2 = new THREE.DirectionalLight(0xffffff, 1.2);
-  sun2.position.set(10, 20, 10);
-  scene.add(sun2);
-  var fill = new THREE.DirectionalLight(0x8888ff, 0.4);
-  fill.position.set(-10, -5, -10);
-  scene.add(fill);
-
-  /* ── LABEL SYSTEM — creates floating HTML labels above each mesh ── */
-  var labelElements = [];
-  var labelsVisible = true;
-  function addLabel(mesh, text, color) {
-    color = color || '#4ade80';
-    var el = document.createElement('div');
-    el.textContent = text;
-    el.style.cssText = 'position:absolute;background:rgba(0,0,0,0.75);color:' + color + ';padding:4px 10px;border-radius:20px;font-size:12px;font-weight:600;white-space:nowrap;border:1px solid ' + color + ';font-family:sans-serif;transform:translate(-50%,-50%);';
-    labelLayer.appendChild(el);
-    labelElements.push({ mesh: mesh, el: el });
-    return el;
-  }
-  document.getElementById('toggle-labels').addEventListener('click', function() {
-    labelsVisible = !labelsVisible;
-    this.textContent = labelsVisible ? 'Hide Labels' : 'Show Labels';
-    labelElements.forEach(function(l) { l.el.style.display = labelsVisible ? 'block' : 'none'; });
-  });
-
-  /* ── CLICKABLE OBJECTS ── */
-  var clickables = []; /* push { mesh, label, info } */
-  var raycaster = new THREE.Raycaster();
-  var mouse = new THREE.Vector2();
-  renderer.domElement.addEventListener('click', function(e) {
-    var rect = renderer.domElement.getBoundingClientRect();
-    mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-    mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-    raycaster.setFromCamera(mouse, camera);
-    var hits = raycaster.intersectObjects(clickables.map(function(c){return c.mesh;}));
-    if (hits.length) {
-      var h = clickables.find(function(c){return c.mesh===hits[0].object;});
-      if (h) { document.getElementById('info-title').textContent=h.label; document.getElementById('info-body').textContent=h.info; document.getElementById('info-panel').style.display='block'; }
-    }
-  });
-
-  /* ════════════════════════════════════════════════════
-     CUSTOMIZE: Build your topic-specific 3D scene here.
-
-     For Photosynthesis full flow, create objects like:
-       - Large glowing yellow sphere for Sun (position far top-left)
-       - Flat green plane/box for Leaf (center)
-       - Green oval sphere inside leaf for Chloroplast
-       - Blue spheres animated floating into leaf for CO2
-       - Animated blue line/cylinder rising from bottom for Water
-       - Animated particles floating out for O2
-       - Small sphere for Glucose output
-       - Use arrows (CylinderGeometry thin, rotated) between stages
-
-     After creating each mesh, call:
-       addLabel(mesh, 'Name', '#colorHex');
-       clickables.push({ mesh, label: 'Name', info: 'Detailed explanation...' });
-     ════════════════════════════════════════════════════ */
-
-  var clock = new THREE.Clock();
-  var vec3 = new THREE.Vector3();
-
-  (function animate() {
-    requestAnimationFrame(animate);
-    var t = clock.getElapsedTime();
-
-    /* CUSTOMIZE: animations (rotation, oscillation, orbit) using t */
-
-    controls.update();
-    renderer.render(scene, camera);
-
-    /* Update label positions */
-    if (labelsVisible) {
-      labelElements.forEach(function(l) {
-        l.mesh.getWorldPosition(vec3);
-        vec3.project(camera);
-        var x = (vec3.x * 0.5 + 0.5) * W;
-        var y = (-vec3.y * 0.5 + 0.5) * H;
-        l.el.style.left = x + 'px';
-        l.el.style.top = (y - 30) + 'px'; /* offset above mesh */
-        l.el.style.display = (vec3.z < 1) ? 'block' : 'none';
-      });
-    }
-  })();
-
-  window.addEventListener('resize', function() {
-    W = container.offsetWidth;
-    camera.aspect = W / H;
-    camera.updateProjectionMatrix();
-    renderer.setSize(W, H);
-  });
-})();
-</script>
+CANVAS SCRIPT REQUIREMENTS:
+- Resize canvas to devicePixelRatio for sharp rendering
+- Keep a hitZones array (push { x, y, r, label, info } for each component)
+- On canvas 'click', loop through hitZones, show infoPanel for the closest match
+- Increment a time variable t each frame for smooth animations
+- Use lineDashOffset -= 0.5 on arrows so dashes appear to flow/travel
+- Particle dots traveling along arrow paths add life to the scene
 
 ═══ PAGE STRUCTURE ═══
 1. Sticky header (lesson title + subject badge)
-2. Hero section (bold animated text — key question or stat)
-3. The Three.js scene above (full-width, labels visible, the COMPLETE process flow)
-4. Step-by-step breakdown of the process (4–6 cards for a flow topic, with icon + hover effect)
-5. "Did you know?" fun facts (click to reveal)
-6. 4-question quiz (multiple choice, instant green/red feedback + explanation)
-7. Footer: "Made with ClassAI"
+2. The animated canvas scene above (full-width, 600px, with click-to-learn info panel)
+3. Step-by-step process breakdown (4–6 numbered cards)
+4. "Did you know?" facts (click to expand)
+5. 4-question quiz (multiple choice, instant green/red feedback)
+6. Footer: "Made with ClassAI"
 
 ═══ DESIGN ═══
-CSS vars: --bg:#0f1117; --text:#e8eaf6; --accent:#4ade80; --card:#1e2130; --muted:#6b7280
-Dark theme. Smooth scroll. Card hover translateY(-4px). Mobile responsive.
+CSS vars: --bg:#0f1117; --text:#e8eaf6; --accent:#4ade80; --card:#1e2130
+Dark theme. Cards with hover effect. Mobile responsive.
 
 ═══ ACCURACY ═══
-All facts 100% correct for Grade ${ctx.grade} ${ctx.subject}. Proper scientific terminology.`
+All facts 100% correct for Grade ${ctx.grade} ${ctx.subject}.`
 }
 
 async function callWithFallback(prompt: string, systemPrompt: string): Promise<string> {
