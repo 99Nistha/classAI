@@ -127,30 +127,29 @@ export async function POST(req: NextRequest) {
 
         send('outline', { outline })
 
-        // Helper: stream a prompt with model fallback
-        async function streamWithFallback(prompt: string, onChunk: (t: string) => void): Promise<string> {
+        // Helper: generate with fallback (non-streaming to avoid rate limit issues)
+        async function generateWithFallback(prompt: string, onChunk: (t: string) => void): Promise<string> {
+          let lastError: any
           for (const modelName of MODEL_FALLBACKS) {
             try {
               const m = getModel(systemPrompt, modelName)
-              const result = await m.generateContentStream(prompt)
-              let full = ''
-              for await (const chunk of result.stream) {
-                const text = chunk.text()
-                full += text
-                onChunk(text)
-              }
-              return stripCodeFences(full)
+              const result = await m.generateContent(prompt)
+              const text = stripCodeFences(result.response.text())
+              onChunk(text)
+              return text
             } catch (e: any) {
-              if (e?.status === 503 || e?.status === 404 || e?.httpStatusCode === 503) continue
-              throw e
+              console.error(`Model ${modelName} failed:`, e?.message ?? e)
+              lastError = e
+              // Always try next model on any error
+              continue
             }
           }
-          throw new Error('All models unavailable. Please try again.')
+          throw new Error(`All models failed. Last error: ${lastError?.message ?? 'unknown'}`)
         }
 
         // ── Step 2: Generate page shell ───────────────────────────────────
         send('status', { stage: 'shell', message: 'Setting up the page design...' })
-        const shell = await streamWithFallback(
+        const shell = await generateWithFallback(
           buildPageShellPrompt(ctx, outline),
           (t) => send('html_chunk', { chunk: t })
         )
@@ -161,7 +160,7 @@ export async function POST(req: NextRequest) {
 
         for (const stage of outline.stages as StageOutline[]) {
           send('status', { stage: `stage_${stage.id}`, message: `Building stage ${stage.id}: ${stage.title}...` })
-          const stageHtml = await streamWithFallback(
+          const stageHtml = await generateWithFallback(
             buildStagePrompt(ctx, outline, stage, accumulatedHtml),
             (t) => send('html_chunk', { chunk: t })
           )
@@ -171,26 +170,17 @@ export async function POST(req: NextRequest) {
 
         // ── Step 4: Generate quiz ─────────────────────────────────────────
         send('status', { stage: 'quiz', message: 'Generating quiz...' })
-        const quizHtml = await streamWithFallback(
+        const quizHtml = await generateWithFallback(
           buildQuizPrompt(ctx, outline),
           (t) => send('html_chunk', { chunk: t })
         )
 
         // ── Step 5: Close page ────────────────────────────────────────────
         send('status', { stage: 'close', message: 'Finishing up...' })
-        let closeHtml = ''
-        for (const modelName of MODEL_FALLBACKS) {
-          try {
-            const m = getModel(systemPrompt, modelName)
-            const r = await m.generateContent(buildPageClosePrompt())
-            closeHtml = stripCodeFences(r.response.text())
-            send('html_chunk', { chunk: closeHtml })
-            break
-          } catch (e: any) {
-            if (e?.status === 503 || e?.status === 404 || e?.httpStatusCode === 503) continue
-            throw e
-          }
-        }
+        const closeHtml = await generateWithFallback(
+          buildPageClosePrompt(),
+          (t) => send('html_chunk', { chunk: t })
+        )
 
         const finalHtml = assembleFinalLesson(shell, stageSections, quizHtml, closeHtml)
 
