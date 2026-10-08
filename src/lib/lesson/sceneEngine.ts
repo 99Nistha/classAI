@@ -106,28 +106,18 @@ Output ONLY a single valid JSON object — no markdown, no code fences, no expla
 }
 
 SCENE RULES:
-- Create 9–13 nodes covering EVERY stage: inputs → processes → outputs
-- For PHOTOSYNTHESIS create nodes for: Sun, Leaf/Stomata, CO₂ Intake, H₂O Uptake, Roots,
-  Chloroplast, Thylakoid Membrane, Light Reactions, ATP + NADPH, Calvin Cycle, G3P/Sugar, Glucose, O₂ Release
-- Spread nodes across full canvas: x range 0.05–0.93, y range 0.07–0.88 (no two nodes closer than 0.14 apart)
-- Add 9–13 directed edges forming the complete flow chain
-- Color by role:
-    energy source  → #FFD700 (yellow)
-    inputs/matter  → #60a5fa (blue)
-    plant parts    → #34d399 (green)
-    organelles     → #a78bfa (violet)
-    reactions      → #c084fc (purple)
-    molecules      → #22d3ee (cyan)
-    outputs        → #fb923c (orange)
-- phase: stagger node pulse animations (use 0, 1, 2, … up to 6)
-- offset: stagger particle travel on each edge (0.0, 0.1, 0.2 … 0.9)
-- info: at least 2 sentences each, scientifically accurate for Grade ${ctx.grade}
+- Create 8–10 nodes covering the key stages: inputs → processes → outputs
+- Spread nodes across the canvas: x 0.07–0.90, y 0.08–0.85 (no two nodes closer than 0.15)
+- Add 7–10 directed edges forming the complete flow
+- Color by role: energy→#FFD700, inputs→#60a5fa, plant parts→#34d399, organelles→#a78bfa, reactions→#c084fc, molecules→#22d3ee, outputs→#fb923c
+- phase: stagger 0–5, offset: stagger 0.0–0.9
+- info: 1 concise sentence per node, accurate for Grade ${ctx.grade}
 
-STEPS: 4–6 numbered steps explaining the process in order.
-FACTS: exactly 3 facts — surprising, grade-appropriate.
-QUIZ: exactly 4 multiple-choice questions, one correct answer each (answer = 0-based index).
+STEPS: exactly 4 steps.
+FACTS: exactly 3 facts.
+QUIZ: exactly 3 questions, one correct answer each (answer = 0-based index).
 
-All content 100% accurate for Grade ${ctx.grade} ${ctx.subject}.`
+All content accurate for Grade ${ctx.grade} ${ctx.subject}.`
 }
 
 // ─── Rendering Engine (inline JS, no external deps) ──────────────────────────
@@ -160,7 +150,7 @@ const ENGINE_JS = `
     var mx = e.clientX - rect.left, my = e.clientY - rect.top;
     panX = mx + (panX - mx) * f;
     panY = my + (panY - my) * f;
-    scale = Math.max(0.2, Math.min(6, scale * f));
+    scale = Math.max(0.6, Math.min(2.5, scale * f));
   }, { passive: false });
 
   /* ── Mouse pan ── */
@@ -178,7 +168,7 @@ const ENGINE_JS = `
     else if (tc.length === 2 && lt.length === 2) {
       var d0 = Math.hypot(lt[1].x - lt[0].x, lt[1].y - lt[0].y);
       var d1 = Math.hypot(tc[1].x - tc[0].x, tc[1].y - tc[0].y);
-      if (d0 > 0) scale = Math.max(0.2, Math.min(6, scale * d1 / d0));
+      if (d0 > 0) scale = Math.max(0.6, Math.min(2.5, scale * d1 / d0));
     }
     lt = tc;
   }, { passive: false });
