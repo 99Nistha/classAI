@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server'
-import Anthropic from '@anthropic-ai/sdk'
+import { GoogleGenerativeAI } from '@google/generative-ai'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import {
@@ -14,7 +14,14 @@ import {
 } from '@/lib/prompts/lesson'
 import { assembleFinalLesson, stripCodeFences } from '@/lib/lesson/assembler'
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY!)
+
+function getModel(systemPrompt: string) {
+  return genAI.getGenerativeModel({
+    model: 'gemini-2.0-flash',
+    systemInstruction: systemPrompt,
+  })
+}
 
 function sse(event: string, data: unknown): string {
   return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`
@@ -73,6 +80,7 @@ export async function POST(req: NextRequest) {
   }
 
   const systemPrompt = buildSystemPrompt(ctx)
+  const model = getModel(systemPrompt)
 
   const encoder = new TextEncoder()
   const stream = new ReadableStream({
@@ -85,23 +93,8 @@ export async function POST(req: NextRequest) {
         // ── Step 1: Generate outline ──────────────────────────────────────
         send('status', { stage: 'outline', message: 'Planning your lesson...' })
 
-        const outlineStream = anthropic.messages.stream({
-          model: 'claude-opus-4-6',
-          max_tokens: 1024,
-          thinking: { type: 'adaptive' },
-          system: systemPrompt,
-          messages: [{ role: 'user', content: buildOutlinePrompt(ctx) }],
-        })
-
-        let outlineRaw = ''
-        for await (const event of outlineStream) {
-          if (
-            event.type === 'content_block_delta' &&
-            event.delta.type === 'text_delta'
-          ) {
-            outlineRaw += event.delta.text
-          }
-        }
+        const outlineResult = await model.generateContent(buildOutlinePrompt(ctx))
+        const outlineRaw = outlineResult.response.text()
 
         let outline: OutlineJSON
         try {
@@ -117,23 +110,12 @@ export async function POST(req: NextRequest) {
         // ── Step 2: Generate page shell ───────────────────────────────────
         send('status', { stage: 'shell', message: 'Setting up the page design...' })
 
-        const shellStream = anthropic.messages.stream({
-          model: 'claude-opus-4-6',
-          max_tokens: 2048,
-          thinking: { type: 'adaptive' },
-          system: systemPrompt,
-          messages: [{ role: 'user', content: buildPageShellPrompt(ctx, outline) }],
-        })
-
+        const shellStream = await model.generateContentStream(buildPageShellPrompt(ctx, outline))
         let shell = ''
-        for await (const event of shellStream) {
-          if (
-            event.type === 'content_block_delta' &&
-            event.delta.type === 'text_delta'
-          ) {
-            shell += event.delta.text
-            send('html_chunk', { chunk: event.delta.text })
-          }
+        for await (const chunk of shellStream.stream) {
+          const text = chunk.text()
+          shell += text
+          send('html_chunk', { chunk: text })
         }
         shell = stripCodeFences(shell)
 
@@ -147,28 +129,15 @@ export async function POST(req: NextRequest) {
             message: `Building stage ${stage.id}: ${stage.title}...`,
           })
 
-          const stageStream = anthropic.messages.stream({
-            model: 'claude-opus-4-6',
-            max_tokens: 3000,
-            thinking: { type: 'adaptive' },
-            system: systemPrompt,
-            messages: [
-              {
-                role: 'user',
-                content: buildStagePrompt(ctx, outline, stage, accumulatedHtml),
-              },
-            ],
-          })
+          const stageStream = await model.generateContentStream(
+            buildStagePrompt(ctx, outline, stage, accumulatedHtml)
+          )
 
           let stageHtml = ''
-          for await (const event of stageStream) {
-            if (
-              event.type === 'content_block_delta' &&
-              event.delta.type === 'text_delta'
-            ) {
-              stageHtml += event.delta.text
-              send('html_chunk', { chunk: event.delta.text })
-            }
+          for await (const chunk of stageStream.stream) {
+            const text = chunk.text()
+            stageHtml += text
+            send('html_chunk', { chunk: text })
           }
           stageHtml = stripCodeFences(stageHtml)
           stageSections.push(stageHtml)
@@ -178,54 +147,27 @@ export async function POST(req: NextRequest) {
         // ── Step 4: Generate quiz ─────────────────────────────────────────
         send('status', { stage: 'quiz', message: 'Generating quiz...' })
 
-        const quizStream = anthropic.messages.stream({
-          model: 'claude-opus-4-6',
-          max_tokens: 2000,
-          thinking: { type: 'adaptive' },
-          system: systemPrompt,
-          messages: [{ role: 'user', content: buildQuizPrompt(ctx, outline) }],
-        })
-
+        const quizStream = await model.generateContentStream(buildQuizPrompt(ctx, outline))
         let quizHtml = ''
-        for await (const event of quizStream) {
-          if (
-            event.type === 'content_block_delta' &&
-            event.delta.type === 'text_delta'
-          ) {
-            quizHtml += event.delta.text
-            send('html_chunk', { chunk: event.delta.text })
-          }
+        for await (const chunk of quizStream.stream) {
+          const text = chunk.text()
+          quizHtml += text
+          send('html_chunk', { chunk: text })
         }
         quizHtml = stripCodeFences(quizHtml)
 
-        // ── Step 5: Close and assemble ────────────────────────────────────
+        // ── Step 5: Close page ────────────────────────────────────────────
         send('status', { stage: 'close', message: 'Finishing up...' })
 
-        const closeStream = anthropic.messages.stream({
-          model: 'claude-opus-4-6',
-          max_tokens: 256,
-          system: systemPrompt,
-          messages: [{ role: 'user', content: buildPageClosePrompt() }],
-        })
-
-        let closeHtml = ''
-        for await (const event of closeStream) {
-          if (
-            event.type === 'content_block_delta' &&
-            event.delta.type === 'text_delta'
-          ) {
-            closeHtml += event.delta.text
-            send('html_chunk', { chunk: event.delta.text })
-          }
-        }
-        closeHtml = stripCodeFences(closeHtml)
+        const closeResult = await model.generateContent(buildPageClosePrompt())
+        const closeHtml = stripCodeFences(closeResult.response.text())
+        send('html_chunk', { chunk: closeHtml })
 
         const finalHtml = assembleFinalLesson(shell, stageSections, quizHtml, closeHtml)
 
-        // ── Step 6: Save lesson to DB ─────────────────────────────────────
+        // ── Step 6: Save lesson ───────────────────────────────────────────
         send('status', { stage: 'saving', message: 'Saving your lesson...' })
 
-        // Check if a lesson already exists for this topic
         const { data: existingLesson } = await supabase
           .from('lessons')
           .select('id, share_token')
@@ -241,10 +183,7 @@ export async function POST(req: NextRequest) {
           shareToken = existingLesson.share_token
           await supabase
             .from('lessons')
-            .update({
-              instructions: teacherInstruction ?? null,
-              status: 'draft',
-            })
+            .update({ instructions: teacherInstruction ?? null, status: 'draft' })
             .eq('id', lessonId)
         } else {
           const { data: newLesson, error: lessonError } = await supabase
@@ -267,18 +206,12 @@ export async function POST(req: NextRequest) {
           shareToken = newLesson.share_token
         }
 
-        // Store the HTML in the lessons table (html_url column will hold raw HTML for now)
-        // In production, upload to Supabase Storage and store the URL
         await supabase
           .from('lessons')
-          .update({ html_url: finalHtml.slice(0, 1000000) }) // Store up to 1MB inline
+          .update({ html_url: finalHtml.slice(0, 1000000) })
           .eq('id', lessonId)
 
-        send('done', {
-          lessonId,
-          shareToken,
-          title: outline.title,
-        })
+        send('done', { lessonId, shareToken, title: outline.title })
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Generation failed'
         send('error', { message })
