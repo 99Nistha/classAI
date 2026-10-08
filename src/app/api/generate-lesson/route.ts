@@ -12,7 +12,7 @@ import {
   type OutlineJSON,
   type StageOutline,
 } from '@/lib/prompts/lesson'
-import { assembleFinalLesson, stripCodeFences } from '@/lib/lesson/assembler'
+import { assembleFinalLesson, stripCodeFences, extractJSON } from '@/lib/lesson/assembler'
 
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY!)
 
@@ -99,7 +99,12 @@ export async function POST(req: NextRequest) {
         let outlineRaw = ''
         for (const modelName of MODEL_FALLBACKS) {
           try {
-            const m = getModel(systemPrompt, modelName)
+            // Use JSON mime type to force clean JSON output
+            const m = genAI.getGenerativeModel({
+              model: modelName,
+              systemInstruction: systemPrompt,
+              generationConfig: { responseMimeType: 'application/json' },
+            })
             const r = await m.generateContent(buildOutlinePrompt(ctx))
             outlineRaw = r.response.text()
             break
@@ -111,9 +116,11 @@ export async function POST(req: NextRequest) {
 
         let outline: OutlineJSON
         try {
-          outline = JSON.parse(stripCodeFences(outlineRaw.trim()))
+          outline = JSON.parse(extractJSON(outlineRaw))
         } catch {
-          send('error', { message: 'Failed to parse lesson outline. Please try again.' })
+          // Log raw response to server console for debugging
+          console.error('Outline parse failed. Raw response:\n', outlineRaw.slice(0, 500))
+          send('error', { message: `Could not parse lesson plan. Model returned: "${outlineRaw.slice(0, 120)}..."` })
           controller.close()
           return
         }
