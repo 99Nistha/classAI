@@ -108,7 +108,16 @@ async function generateHtml(
   const focusLine  = focusNote          ? `\nFocus especially on: "${focusNote}"`                  : ''
   const styleLine  = visualStyle        ? `\n\nDesired format:\n${STYLE_GUIDES[visualStyle] ?? visualStyle}` : ''
   const webLine    = webContext         ? `\nWeb context:\n${webContext}`                           : ''
-  const quizLine   = includeQuiz        ? 'Include a 3-question quiz with instant feedback at the end.' : 'No quiz needed.'
+  const quizLine   = includeQuiz
+    ? `Include a 3-question multiple-choice quiz at the end. Quiz UX rules:
+    - Show 4 answer options (A/B/C/D) as clickable buttons.
+    - Once a student clicks an option, LOCK it immediately (disable all buttons for that question, highlight their choice).
+    - Show a "Submit Answer" button that appears after they click an option.
+    - After submission, show whether they were correct (green ✓) or wrong (red ✗) with the correct answer highlighted.
+    - Never allow changing an answer after submission.
+    - Track score and show final score after all 3 questions are answered.
+    - Send results via postMessage: window.parent.postMessage({ type: 'quizAnswer', questionIndex: i, questionText: '...', chosenAnswer: '...', correctAnswer: '...', isCorrect: true/false }, '*') after each submission.`
+    : 'No quiz needed.'
   const researchFormatted = formatResearch(research)
 
   // Natural, open prompt — like what you'd type in Claude.ai

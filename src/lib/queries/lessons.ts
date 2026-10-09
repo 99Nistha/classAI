@@ -1,6 +1,15 @@
 import { createClient } from '@/lib/supabase/client'
 import type { Lesson } from '@/types'
 
+export async function getLessons() {
+  const supabase = createClient()
+  const { data } = await supabase
+    .from('lessons')
+    .select('*, topics(title, chapters(title, classes(id, name, grade, subject))), teachers(name)')
+    .order('created_at', { ascending: false })
+  return data ?? []
+}
+
 export async function getLessonByTopic(topicId: string): Promise<Lesson | null> {
   const supabase = createClient()
   const { data } = await supabase

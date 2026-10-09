@@ -17,6 +17,19 @@ interface ChatMsg {
   isStatus?: boolean   // dim progress messages
 }
 
+// ── Error classifier ──────────────────────────────────────────────────────────
+function classifyError(raw: string): { friendly: string; retry: boolean } {
+  if (/credit|billing|quota|balance/i.test(raw))
+    return { friendly: 'API credits ran out. Try again in a moment.', retry: false }
+  if (/timeout|timed out|took too long/i.test(raw))
+    return { friendly: 'Generation timed out — retrying…', retry: true }
+  if (/rate.?limit/i.test(raw))
+    return { friendly: 'Rate limit hit. Retrying in 10 s…', retry: true }
+  if (/network|fetch|ECONNRESET/i.test(raw))
+    return { friendly: 'Network error — retrying…', retry: true }
+  return { friendly: raw, retry: false }
+}
+
 // ── localStorage helpers ──────────────────────────────────────────────────────
 interface PersistedChat {
   messages: ChatMsg[]
@@ -230,6 +243,7 @@ export default function CreateVisualPage({ params }: Props) {
     quiz: boolean,
     focus: string | null,
     instruction: string,
+    isRetry = false,
   ) {
     if (generating) return
     setGenerating(true)
@@ -250,7 +264,12 @@ export default function CreateVisualPage({ params }: Props) {
       })
 
       if (!res.ok || !res.body) {
-        setChatMessages(prev => [...prev, { role: 'assistant', content: 'Failed to start generation. Please try again.' }])
+        const { friendly, retry } = classifyError('Failed to start generation.')
+        setChatMessages(prev => [...prev, { role: 'assistant', content: friendly }])
+        if (retry && !isRetry) {
+          setGenerating(false)
+          setTimeout(() => generate(style, quiz, focus, instruction, true), 10000)
+        }
         return
       }
 
@@ -295,14 +314,25 @@ export default function CreateVisualPage({ params }: Props) {
           }
           if (eventType === 'error') {
             setStatusText('')
-            setChatMessages(prev => [...prev, { role: 'assistant', content: `Error: ${payload.message}` }])
+            const { friendly, retry } = classifyError(payload.message ?? 'Generation failed.')
+            setChatMessages(prev => [...prev, { role: 'assistant', content: friendly }])
+            if (retry && !isRetry) {
+              setGenerating(false)
+              const delay = /rate.?limit/i.test(payload.message) ? 10000 : 3000
+              setTimeout(() => generate(style, quiz, focus, instruction, true), delay)
+            }
           }
         }
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Something went wrong.'
-      setChatMessages(prev => [...prev, { role: 'assistant', content: msg }])
+      const raw = err instanceof Error ? err.message : 'Something went wrong.'
+      const { friendly, retry } = classifyError(raw)
+      setChatMessages(prev => [...prev, { role: 'assistant', content: friendly }])
       setStatusText('')
+      if (retry && !isRetry) {
+        setGenerating(false)
+        setTimeout(() => generate(style, quiz, focus, instruction, true), 3000)
+      }
     } finally {
       setGenerating(false)
     }

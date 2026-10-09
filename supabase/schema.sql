@@ -83,6 +83,52 @@ create policy "Topics: own via chapter" on public.topics
 create policy "Lessons: own" on public.lessons
   for all using (teacher_id = auth.uid());
 
+-- School library flag on lessons
+alter table public.lessons add column if not exists is_school_shared boolean not null default false;
+
+-- Quiz responses (public insert, teacher read)
+create table if not exists public.quiz_responses (
+  id uuid primary key default gen_random_uuid(),
+  lesson_id uuid not null references public.lessons(id) on delete cascade,
+  student_name text not null,
+  question_index int not null,
+  question_text text not null,
+  chosen_answer text not null,
+  correct_answer text not null,
+  is_correct boolean not null,
+  responded_at timestamptz default now()
+);
+
+alter table public.quiz_responses enable row level security;
+
+create policy "Quiz: public insert" on public.quiz_responses
+  for insert with check (true);
+
+create policy "Quiz: teacher read" on public.quiz_responses
+  for select using (
+    lesson_id in (select id from public.lessons where teacher_id = auth.uid())
+  );
+
+-- School library RLS
+create or replace function public.current_teacher_domain()
+returns text language sql security definer set search_path = ''
+as $$ select split_part(email, '@', 2) from public.teachers where id = auth.uid() $$;
+
+create policy "School library: same domain" on public.lessons
+  for select using (
+    is_school_shared = true
+    and (
+      teacher_id = auth.uid()
+      or exists (
+        select 1 from public.teachers
+        where id = auth.uid()
+        and split_part(email,'@',2) = (
+          select split_part(email,'@',2) from public.teachers where id = lessons.teacher_id
+        )
+      )
+    )
+  );
+
 -- Auto-insert teacher row on signup
 create or replace function public.handle_new_user()
 returns trigger language plpgsql security definer set search_path = ''

@@ -6,15 +6,19 @@ import { archiveClass, deleteClass, updateClass } from '@/lib/queries/classes'
 import type { Class } from '@/types'
 
 const SUBJECT_STYLES: Record<string, { from: string; to: string; badge: string; dot: string }> = {
-  Biology:     { from: '#052e16', to: '#14532d', badge: 'bg-emerald-900/60 text-emerald-300 border-emerald-800', dot: 'bg-emerald-400' },
-  Chemistry:   { from: '#1c1917', to: '#292524', badge: 'bg-yellow-900/60 text-yellow-300 border-yellow-800', dot: 'bg-yellow-400' },
-  Physics:     { from: '#0c1a2e', to: '#172554', badge: 'bg-blue-900/60 text-blue-300 border-blue-800', dot: 'bg-blue-400' },
-  Mathematics: { from: '#1e0a4a', to: '#2e1065', badge: 'bg-purple-900/60 text-purple-300 border-purple-800', dot: 'bg-purple-400' },
-  History:     { from: '#1c0a00', to: '#431407', badge: 'bg-orange-900/60 text-orange-300 border-orange-800', dot: 'bg-orange-400' },
-  Geography:   { from: '#042f2e', to: '#134e4a', badge: 'bg-teal-900/60 text-teal-300 border-teal-800', dot: 'bg-teal-400' },
+  Biology:        { from: '#34d399', to: '#059669', badge: 'bg-emerald-50 text-emerald-700 border-emerald-200', dot: 'bg-emerald-500' },
+  Chemistry:      { from: '#fcd34d', to: '#f59e0b', badge: 'bg-amber-50 text-amber-700 border-amber-200', dot: 'bg-amber-400' },
+  Physics:        { from: '#60a5fa', to: '#4f46e5', badge: 'bg-blue-50 text-blue-700 border-blue-200', dot: 'bg-blue-500' },
+  Mathematics:    { from: '#c084fc', to: '#7c3aed', badge: 'bg-purple-50 text-purple-700 border-purple-200', dot: 'bg-purple-500' },
+  History:        { from: '#fb923c', to: '#dc2626', badge: 'bg-orange-50 text-orange-700 border-orange-200', dot: 'bg-orange-500' },
+  Geography:      { from: '#2dd4bf', to: '#0891b2', badge: 'bg-teal-50 text-teal-700 border-teal-200', dot: 'bg-teal-500' },
+  English:        { from: '#f472b6', to: '#db2777', badge: 'bg-pink-50 text-pink-700 border-pink-200', dot: 'bg-pink-500' },
+  Literature:     { from: '#fb7185', to: '#e11d48', badge: 'bg-rose-50 text-rose-700 border-rose-200', dot: 'bg-rose-500' },
+  'Computer Science': { from: '#38bdf8', to: '#6366f1', badge: 'bg-sky-50 text-sky-700 border-sky-200', dot: 'bg-sky-500' },
+  Economics:      { from: '#4ade80', to: '#16a34a', badge: 'bg-green-50 text-green-700 border-green-200', dot: 'bg-green-500' },
 }
 
-const DEFAULT_STYLE = { from: '#0f172a', to: '#1e293b', badge: 'bg-slate-800 text-slate-300 border-slate-700', dot: 'bg-slate-400' }
+const DEFAULT_STYLE = { from: '#a78bfa', to: '#7c3aed', badge: 'bg-violet-50 text-violet-700 border-violet-200', dot: 'bg-violet-500' }
 
 interface Props {
   cls: Class
@@ -53,7 +57,7 @@ export default function ClassCard({ cls, onChanged }: Props) {
   }
 
   return (
-    <div className="relative rounded-2xl border border-slate-200 bg-white overflow-hidden hover:border-violet-300 transition-all hover:-translate-y-0.5 hover:shadow-lg hover:shadow-violet-100/50">
+    <div className="relative rounded-2xl border border-slate-200 bg-white overflow-hidden hover:border-violet-300 transition-all hover:-translate-y-1 hover:shadow-xl hover:shadow-violet-100/60">
       {renaming ? (
         <>
           <div

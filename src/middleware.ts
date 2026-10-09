@@ -31,8 +31,8 @@ export async function middleware(request: NextRequest) {
 
   const { pathname } = request.nextUrl
 
-  // Public routes — share links and login
-  if (pathname.startsWith('/share/') || pathname === '/login') {
+  // Public routes — share links, quiz response API, and login
+  if (pathname.startsWith('/share/') || pathname === '/api/quiz-response' || pathname === '/login') {
     if (user && pathname === '/login') {
       return NextResponse.redirect(new URL('/', request.url))
     }
