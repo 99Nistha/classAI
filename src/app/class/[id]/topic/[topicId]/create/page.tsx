@@ -49,18 +49,17 @@ export default function CreateVisualPage({ params }: Props) {
   const [cls, setCls] = useState<Class | null>(null)
   const [loading, setLoading] = useState(true)
 
-  // Chat state
-  const [chatMessages, setChatMessages] = useState<ChatMsg[]>([])
+  // Chat state — restored from localStorage immediately via lazy initializer
+  const [chatMessages, setChatMessages] = useState<ChatMsg[]>(() => loadPersistedChat(topicId)?.messages ?? [])
   const [chatInput, setChatInput] = useState('')
   const [chatLoading, setChatLoading] = useState(false)
-  const [chatStarted, setChatStarted] = useState(false)
 
-  // Generation params collected through chat
-  const [visualStyle, setVisualStyle] = useState<string | null>(null)
-  const [includeQuiz, setIncludeQuiz] = useState<boolean | null>(null)
+  // Generation params — also restored from localStorage
+  const [visualStyle, setVisualStyle] = useState<string | null>(() => loadPersistedChat(topicId)?.visualStyle ?? null)
+  const [includeQuiz, setIncludeQuiz] = useState<boolean | null>(() => loadPersistedChat(topicId)?.includeQuiz ?? null)
   const [focusNote, setFocusNote] = useState<string | null>(null)
   // The teacher's first real content request (preserved across the whole conversation)
-  const [originalInstruction, setOriginalInstruction] = useState<string | null>(null)
+  const [originalInstruction, setOriginalInstruction] = useState<string | null>(() => loadPersistedChat(topicId)?.originalInstruction ?? null)
 
   // Generation state
   const [generating, setGenerating] = useState(false)
@@ -75,6 +74,7 @@ export default function CreateVisualPage({ params }: Props) {
   const chatEndRef = useRef<HTMLDivElement>(null)
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const greetingShown = useRef(false)
 
   // ── Load data ───────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -112,51 +112,36 @@ export default function CreateVisualPage({ params }: Props) {
     load()
   }, [topicId, classId])
 
-  // Restore or start chat once topic is loaded
+  // Show greeting only if no saved messages (topic must load first for title)
   useEffect(() => {
-    if (chatStarted || !topic || !cls) return
-    setChatStarted(true)
-
-    const saved = loadPersistedChat(topicId)
-    if (saved && saved.messages.length > 0) {
-      // Restore previous conversation
-      setChatMessages(saved.messages)
-      if (saved.visualStyle) setVisualStyle(saved.visualStyle)
-      if (saved.includeQuiz !== null) setIncludeQuiz(saved.includeQuiz)
-      if (saved.originalInstruction) setOriginalInstruction(saved.originalInstruction)
-    } else {
-      // Fresh start — show greeting with format options
-      setChatMessages([{
-        role: 'assistant',
-        content: `What kind of visual for "${topic.title}"?`,
-        options: [
-          { id: 'anatomy',     label: 'Labeled Diagram',   icon: '🔬', description: 'Realistic illustration with labeled parts' },
-          { id: 'flow',        label: 'Process Flow',       icon: '🔄', description: 'How a process works, step by step' },
-          { id: 'mindmap',     label: 'Mind Map',           icon: '🗺️', description: 'Key ideas branching from the main topic' },
-          { id: 'steps',       label: 'Step-by-Step',       icon: '📋', description: 'Numbered visual walkthrough' },
-          { id: 'timeline',    label: 'Timeline',           icon: '📅', description: 'Events or stages in order' },
-          { id: 'comparison',  label: 'Comparison',         icon: '⚖️', description: 'Side-by-side visual comparison' },
-          { id: 'graph',       label: 'Graph / Chart',      icon: '📊', description: 'Data or relationships plotted visually' },
-          { id: 'infographic', label: 'Infographic',        icon: '🖼️', description: 'Rich visual with icons, facts, and stats' },
-        ],
-      }])
-    }
-  }, [topic, cls, chatStarted, topicId])
+    if (!topic || !cls || greetingShown.current || chatMessages.length > 0) return
+    greetingShown.current = true
+    setChatMessages([{
+      role: 'assistant',
+      content: `What kind of visual for "${topic.title}"?`,
+      options: [
+        { id: 'anatomy',     label: 'Labeled Diagram',   icon: '🔬', description: 'Realistic illustration with labeled parts' },
+        { id: 'flow',        label: 'Process Flow',       icon: '🔄', description: 'How a process works, step by step' },
+        { id: 'mindmap',     label: 'Mind Map',           icon: '🗺️', description: 'Key ideas branching from the main topic' },
+        { id: 'steps',       label: 'Step-by-Step',       icon: '📋', description: 'Numbered visual walkthrough' },
+        { id: 'timeline',    label: 'Timeline',           icon: '📅', description: 'Events or stages in order' },
+        { id: 'comparison',  label: 'Comparison',         icon: '⚖️', description: 'Side-by-side visual comparison' },
+        { id: 'graph',       label: 'Graph / Chart',      icon: '📊', description: 'Data or relationships plotted visually' },
+        { id: 'infographic', label: 'Infographic',        icon: '🖼️', description: 'Rich visual with icons, facts, and stats' },
+      ],
+    }])
+  }, [topic, cls])
 
   // Persist chat whenever messages change (skip status/progress messages)
   useEffect(() => {
-    if (!chatStarted || chatMessages.length === 0) return
     const toSave = chatMessages.filter(m => !m.isStatus)
+    if (toSave.length === 0) return
     persistChat(topicId, { messages: toSave, visualStyle, includeQuiz, originalInstruction })
-  }, [chatMessages, visualStyle, includeQuiz, originalInstruction, topicId, chatStarted])
+  }, [chatMessages, visualStyle, includeQuiz, originalInstruction, topicId])
 
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [chatMessages])
 
-  useEffect(() => {
-    if (iframeRef.current && liveHtml) {
-      iframeRef.current.srcdoc = liveHtml
-    }
-  }, [liveHtml])
+  // srcDoc is set directly on the iframe element — no effect needed
 
   // ── Chat send ───────────────────────────────────────────────────────────────
   async function sendChat(userText: string) {
@@ -198,13 +183,13 @@ export default function CreateVisualPage({ params }: Props) {
         setOriginalInstruction(userText)
       }
 
-      // Trigger generation when chat says ready
+      // Trigger generation when chat says ready — pass full chat context
       if (data.readyToGenerate) {
         await generate(
           data.visualStyle ?? visualStyle,
           data.includeQuiz ?? includeQuiz ?? true,
           data.focusNote ?? focusNote ?? null,
-          originalInstruction ?? userText,
+          buildInstructionFromChat(userText),
         )
       }
     } catch {
@@ -212,6 +197,25 @@ export default function CreateVisualPage({ params }: Props) {
     } finally {
       setChatLoading(false)
     }
+  }
+
+  // ── Build a rich instruction from the full chat history ──────────────────────
+  function buildInstructionFromChat(latestUserText?: string): string {
+    const msgs = [...chatMessages]
+    if (latestUserText) msgs.push({ role: 'user', content: latestUserText })
+
+    const userMsgs = msgs
+      .filter(m => m.role === 'user')
+      // Skip bare format-selection messages ("I'd like a Flow Chart")
+      .filter(m => !/^I'?d like a /i.test(m.content))
+      .map(m => m.content.trim())
+      .filter(Boolean)
+
+    const parts: string[] = []
+    if (userMsgs.length > 0) parts.push(userMsgs.join('. '))
+    if (focusNote) parts.push(`Focus on: ${focusNote}`)
+
+    return parts.join('. ') || topic?.title || ''
   }
 
   // ── Option selection ────────────────────────────────────────────────────────
@@ -375,49 +379,53 @@ export default function CreateVisualPage({ params }: Props) {
 
             {/* Messages */}
             <div className="flex-1 overflow-y-auto px-3 py-4 space-y-3">
-              {chatMessages.map((msg, i) => (
-                <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[88%] ${msg.role === 'user' ? '' : ''}`}>
-                    {/* Bubble */}
-                    {msg.isStatus ? (
-                      <div className="flex items-center gap-2 text-xs text-slate-500 px-1 py-1">
-                        <div className="w-2 h-2 rounded-full bg-violet-600/60 animate-pulse flex-shrink-0" />
-                        {msg.content}
-                      </div>
-                    ) : (
-                      <div className={`rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed ${
-                        msg.role === 'user'
-                          ? 'bg-violet-600 text-white rounded-br-sm'
-                          : 'bg-slate-800 text-slate-200 rounded-bl-sm'
-                      }`}>
-                        {msg.content}
-                      </div>
-                    )}
+              {(() => {
+                // Only show format options on the most recent message that has them
+                const lastOptionsIdx = chatMessages.findLastIndex(m => !!m.options)
+                return chatMessages.map((msg, i) => (
+                  <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                    <div className={`max-w-[88%] ${msg.role === 'user' ? '' : ''}`}>
+                      {/* Bubble */}
+                      {msg.isStatus ? (
+                        <div className="flex items-center gap-2 text-xs text-slate-500 px-1 py-1">
+                          <div className="w-2 h-2 rounded-full bg-violet-600/60 animate-pulse flex-shrink-0" />
+                          {msg.content}
+                        </div>
+                      ) : (
+                        <div className={`rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed ${
+                          msg.role === 'user'
+                            ? 'bg-violet-600 text-white rounded-br-sm'
+                            : 'bg-slate-800 text-slate-200 rounded-bl-sm'
+                        }`}>
+                          {msg.content}
+                        </div>
+                      )}
 
-                    {/* Visual style options grid */}
-                    {msg.options && (
-                      <div className="mt-2 grid grid-cols-2 gap-1.5">
-                        {msg.options.map((opt) => (
-                          <button
-                            key={opt.id}
-                            onClick={() => selectOption(opt)}
-                            disabled={generating || chatLoading}
-                            className={`flex flex-col items-start gap-0.5 rounded-xl border px-2.5 py-2 text-left transition-all hover:border-violet-500 hover:bg-violet-950/40 disabled:opacity-50 ${
-                              visualStyle === opt.id
-                                ? 'border-violet-500 bg-violet-950/40'
-                                : 'border-slate-700 bg-slate-800/60'
-                            }`}
-                          >
-                            <span className="text-base">{opt.icon}</span>
-                            <span className="text-xs font-semibold text-slate-200">{opt.label}</span>
-                            <span className="text-xs text-slate-500 leading-tight">{opt.description}</span>
-                          </button>
-                        ))}
-                      </div>
-                    )}
+                      {/* Visual style options — only on the most recent options message */}
+                      {msg.options && i === lastOptionsIdx && (
+                        <div className="mt-2 grid grid-cols-2 gap-1.5">
+                          {msg.options.map((opt) => (
+                            <button
+                              key={opt.id}
+                              onClick={() => selectOption(opt)}
+                              disabled={generating || chatLoading}
+                              className={`flex flex-col items-start gap-0.5 rounded-xl border px-2.5 py-2 text-left transition-all hover:border-violet-500 hover:bg-violet-950/40 disabled:opacity-50 ${
+                                visualStyle === opt.id
+                                  ? 'border-violet-500 bg-violet-950/40'
+                                  : 'border-slate-700 bg-slate-800/60'
+                              }`}
+                            >
+                              <span className="text-base">{opt.icon}</span>
+                              <span className="text-xs font-semibold text-slate-200">{opt.label}</span>
+                              <span className="text-xs text-slate-500 leading-tight">{opt.description}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))
+              })()}
 
               {/* Typing indicator */}
               {(chatLoading || generating) && (
@@ -449,7 +457,7 @@ export default function CreateVisualPage({ params }: Props) {
                   visualStyle ?? 'flow',
                   includeQuiz ?? true,
                   focusNote,
-                  (originalInstruction ?? chatInput.trim()) || (topic?.title ?? ''),
+                  buildInstructionFromChat(chatInput.trim() || undefined),
                 )}
                 disabled={generating || chatLoading}
                 className="w-full rounded-xl bg-violet-600 px-3 py-2.5 text-sm font-semibold text-white hover:bg-violet-500 disabled:opacity-40 transition-colors flex items-center justify-center gap-2"
@@ -502,6 +510,7 @@ export default function CreateVisualPage({ params }: Props) {
                 className="flex-1 w-full border-0"
                 title="Lesson Preview"
                 sandbox="allow-scripts allow-same-origin allow-popups"
+                srcDoc={liveHtml}
               />
             ) : (
               <div className="flex-1 flex items-center justify-center bg-slate-950">

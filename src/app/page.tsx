@@ -7,16 +7,37 @@ import ClassCard from '@/components/classes/ClassCard'
 import AddClassModal from '@/components/classes/AddClassModal'
 import type { Class } from '@/types'
 
+function greeting(name: string | null): string {
+  const hour = new Date().getHours()
+  const time = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'
+  const firstName = name?.split(' ')[0] ?? null
+  return firstName ? `${time}, ${firstName}` : time
+}
+
 export default function HomePage() {
   const [classes, setClasses] = useState<Class[]>([])
   const [loading, setLoading] = useState(true)
   const [showAdd, setShowAdd] = useState(false)
+  const [teacherName, setTeacherName] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
+    const supabase = createClient()
     try {
-      const data = await getClasses()
+      const [data, { data: { user } }] = await Promise.all([
+        getClasses(),
+        supabase.auth.getUser(),
+      ])
       setClasses(data)
+
+      if (user) {
+        const { data: teacher } = await supabase
+          .from('teachers')
+          .select('name')
+          .eq('id', user.id)
+          .single()
+        if (teacher?.name) setTeacherName(teacher.name)
+      }
     } finally {
       setLoading(false)
     }
@@ -36,26 +57,37 @@ export default function HomePage() {
         <div className="max-w-5xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-lg bg-violet-600 flex items-center justify-center flex-shrink-0">
-              <svg className="w-4.5 h-4.5 text-white w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-[18px] h-[18px] text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
               </svg>
             </div>
             <span className="text-base font-bold text-white">ClassAI</span>
           </div>
-          <button
-            onClick={handleSignOut}
-            className="text-sm text-slate-500 hover:text-slate-300 transition-colors"
-          >
-            Sign out
-          </button>
+          <div className="flex items-center gap-4">
+            {teacherName && (
+              <span className="text-sm text-slate-400 hidden sm:block">
+                {teacherName}
+              </span>
+            )}
+            <button
+              onClick={handleSignOut}
+              className="text-sm text-slate-500 hover:text-slate-300 transition-colors"
+            >
+              Sign out
+            </button>
+          </div>
         </div>
       </header>
 
       <main className="max-w-5xl mx-auto px-6 py-10">
         <div className="flex items-center justify-between mb-8">
           <div>
-            <h2 className="text-2xl font-bold text-white">My Classes</h2>
-            <p className="text-slate-400 text-sm mt-1">Select a class to manage topics and create visual lessons.</p>
+            <h2 className="text-2xl font-bold text-white">{greeting(teacherName)}</h2>
+            <p className="text-slate-400 text-sm mt-1">
+              {classes.length > 0
+                ? `${classes.length} class${classes.length !== 1 ? 'es' : ''} · select one to manage topics and create visuals`
+                : 'Select a class to manage topics and create visual lessons.'}
+            </p>
           </div>
           <button
             onClick={() => setShowAdd(true)}

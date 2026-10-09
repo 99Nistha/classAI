@@ -14,7 +14,7 @@ export function buildSystemPrompt(_ctx: LessonContext): string {
   return `You are creating an interactive educational web page. Output ONLY complete HTML from <!DOCTYPE html> to </html>. No explanation, no markdown fences, no code blocks.`
 }
 
-const STYLE_GUIDES: Record<string, string> = {
+export const STYLE_GUIDES: Record<string, string> = {
   anatomy: `VISUAL: Realistic SVG anatomical illustration.
 Draw the ACTUAL structure — not circles. Use SVG paths/polygons to depict real anatomy:
 - e.g. for the eye: draw the white sclera oval, curved cornea at front, coloured iris ring, black pupil, lens shape, clear vitreous humour, curved retina at back, optic nerve disc

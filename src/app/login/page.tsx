@@ -7,6 +7,7 @@ type Mode = 'signin' | 'signup'
 
 export default function LoginPage() {
   const [mode, setMode] = useState<Mode>('signin')
+  const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
@@ -26,7 +27,11 @@ export default function LoginPage() {
       if (error) setError(error.message)
       else window.location.href = '/'
     } else {
-      const { error } = await supabase.auth.signUp({ email, password })
+      const { error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: { data: { full_name: name.trim() } },
+      })
       setLoading(false)
       if (error) setError(error.message)
       else setSignupDone(true)
@@ -136,6 +141,25 @@ export default function LoginPage() {
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
+            {/* Name — sign up only */}
+            {mode === 'signup' && (
+              <div>
+                <label htmlFor="name" className="block text-sm font-medium text-slate-300 mb-1.5">
+                  Full name
+                </label>
+                <input
+                  id="name"
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  required
+                  autoFocus
+                  placeholder="Jane Smith"
+                  className="w-full rounded-xl border border-slate-700 bg-slate-900 px-4 py-2.5 text-sm text-slate-100 placeholder-slate-600 outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 transition-all"
+                />
+              </div>
+            )}
+
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-slate-300 mb-1.5">
                 Email address
@@ -146,7 +170,7 @@ export default function LoginPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                autoFocus
+                autoFocus={mode === 'signin'}
                 placeholder="you@school.edu"
                 className="w-full rounded-xl border border-slate-700 bg-slate-900 px-4 py-2.5 text-sm text-slate-100 placeholder-slate-600 outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 transition-all"
               />

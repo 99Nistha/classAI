@@ -1,10 +1,17 @@
 import { NextRequest } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
+import OpenAI from 'openai'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { stripCodeFences } from '@/lib/lesson/assembler'
+import { STYLE_GUIDES } from '@/lib/prompts/lesson'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+const openai   = new OpenAI({ apiKey: process.env.OPENAI_API_KEY ?? 'no-key' })
+
+// Which provider to use — prefers Anthropic, falls back to OpenAI
+const PROVIDER: 'anthropic' | 'openai' =
+  process.env.ANTHROPIC_API_KEY ? 'anthropic' : 'openai'
 
 function sse(event: string, data: unknown): string {
   return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`
@@ -30,12 +37,7 @@ async function searchWeb(query: string): Promise<string> {
 
 // ── Step 1: research best approach for this specific topic ────────────────────
 async function researchTopic(topic: string, subject: string, grade: number): Promise<string> {
-  const msg = await anthropic.messages.create({
-    model: 'claude-haiku-4-5-20251001',
-    max_tokens: 1024,
-    messages: [{
-      role: 'user',
-      content: `You are helping plan the best interactive educational visualization for:
+  const researchPrompt = `You are helping plan the best interactive educational visualization for:
 Topic: "${topic}" | Subject: ${subject} | Grade: ${grade}
 
 Think about what the BEST educational websites (Khan Academy, PhET, BBC Bitesize, CK-12, Visible Body) do for this exact topic. What makes it work visually and interactively?
@@ -44,15 +46,43 @@ Return ONLY valid JSON (no fences):
 {
   "bestApproach": "1-2 sentences describing the ideal visual format",
   "keyThingsToShow": ["most important concept 1", "concept 2", "concept 3"],
-  "interactivity": ["zoom/pan", "orbit 360", "click to expand labels", "animated flow", "highlight on hover"],
   "recommendedTech": "Three.js for 3D | SVG for diagrams | Canvas for animation",
   "colorGuidance": "brief note on colours that work for this topic",
   "ageNote": "1 sentence on what Grade ${grade} students can handle"
-}`,
-    }],
-  })
-  const raw = msg.content[0].type === 'text' ? msg.content[0].text : '{}'
+}`
+
+  let raw: string
+  if (PROVIDER === 'anthropic') {
+    const msg = await anthropic.messages.create({
+      model: 'claude-haiku-5-5',
+      max_tokens: 1024,
+      messages: [{ role: 'user', content: researchPrompt }],
+    })
+    raw = msg.content[0].type === 'text' ? msg.content[0].text : '{}'
+  } else {
+    const msg = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      max_tokens: 1024,
+      messages: [{ role: 'user', content: researchPrompt }],
+    })
+    raw = msg.choices[0]?.message?.content ?? '{}'
+  }
+
   return raw.replace(/^```[\w]*\s*/i, '').replace(/\s*```\s*$/i, '').trim()
+}
+
+// ── Format research JSON into natural text ────────────────────────────────────
+function formatResearch(rawJson: string): string {
+  try {
+    const r = JSON.parse(rawJson)
+    const lines: string[] = []
+    if (r.bestApproach)         lines.push(`Best approach: ${r.bestApproach}`)
+    if (r.keyThingsToShow?.length) lines.push(`Key things to show: ${(r.keyThingsToShow as string[]).join(', ')}`)
+    if (r.recommendedTech)      lines.push(`Recommended tech: ${r.recommendedTech}`)
+    if (r.colorGuidance)        lines.push(`Colors: ${r.colorGuidance}`)
+    if (r.ageNote)              lines.push(`Age note: ${r.ageNote}`)
+    return lines.join('\n')
+  } catch { return rawJson }
 }
 
 // ── Grade-level language guidance ────────────────────────────────────────────
@@ -74,67 +104,81 @@ async function generateHtml(
   webContext: string,
 ): Promise<string> {
 
-  const instr = teacherInstruction ? `\nTeacher's request: "${teacherInstruction}"` : ''
-  const focus = focusNote ? `\nFocus on: "${focusNote}"` : ''
-  const style = visualStyle ? `\nVisual style chosen: ${visualStyle}` : ''
-  const web = webContext ? `\nWeb examples found:\n${webContext}\n` : ''
-  const quiz = includeQuiz
-    ? '\n- A 3-question quiz section at the bottom with instant feedback (click to reveal answer + explanation)'
-    : ''
+  const instrLine  = teacherInstruction ? `\nTeacher's specific request: "${teacherInstruction}"` : ''
+  const focusLine  = focusNote          ? `\nFocus especially on: "${focusNote}"`                  : ''
+  const styleLine  = visualStyle        ? `\n\nDesired format:\n${STYLE_GUIDES[visualStyle] ?? visualStyle}` : ''
+  const webLine    = webContext         ? `\nWeb context:\n${webContext}`                           : ''
+  const quizLine   = includeQuiz        ? 'Include a 3-question quiz with instant feedback at the end.' : 'No quiz needed.'
+  const researchFormatted = formatResearch(research)
 
-  const prompt = `Create a stunning, fully interactive educational web page.
+  // Natural, open prompt — like what you'd type in Claude.ai
+  const prompt = `Build the most impressive, fully interactive educational experience you can for this topic.
 
 Topic: "${topic}" — ${subject}, Grade ${grade}
-Chapter: ${chapter}${instr}${focus}${style}
+Chapter: ${chapter}${instrLine}${focusLine}${styleLine}
 
-Research insights for this topic:
-${research}
-${web}
-Build the BEST possible version of this for a student. Use your full knowledge of what makes great educational tools for "${topic}":
+Research insights:
+${researchFormatted}
+${webLine}
 
-QUALITY BAR:
-- Think of what Visible Body, PhET, or Khan Academy would build for this exact topic
-- Every interactive element must ACTUALLY WORK — no broken links, no placeholder buttons
-- Labels must appear when clicked or hovered (real popups, not alerts)
-- Animations must run smoothly — no janky transitions
-- Be creative with the format: 3D scene, animated SVG diagram, interactive cross-section, particle simulation — whatever BEST fits this topic
+Think: what would PhET Interactive Simulations, Visible Body, or Khan Academy build for "${topic}"? Then build something at least that good. Pick whichever format makes this topic genuinely come alive — 3D physics simulation, animated SVG diagram, interactive cross-section, particle system, whatever is BEST for this specific topic.
 
-NAVIGATION — always implement all three, no exceptions:
-- Scroll wheel → zoom in / zoom out (smooth, feels natural)
-- Click + drag → pan around the scene (left, right, up, down)
-- No forced auto-rotation or 360 spin — the user controls movement
-- For 3D: use OrbitControls with autoRotate: false, enableDamping: true for smoothness
-- Show a one-line hint at the top of the visual: "Scroll to zoom · Drag to pan"
+Everything must actually work. Every button, label, interaction, animation. Students can scroll to zoom and drag to pan. All text must be written at a Grade ${grade} level (${gradeGuidance(grade)}).
 
-GRADE-LEVEL LANGUAGE (this is critical — every word of text on the page must match):
-${gradeGuidance(grade)}
+Include 3 surprising clickable facts. ${quizLine} Footer: "Made with ClassAI". Dark background #060a14, accent colour #7c3aed.
 
-CONTENT:
-- Main visual section (full width, generous height)
-- Explanation section below the visual — written at Grade ${grade} reading level
-- 3 interesting facts (click to reveal) — surprising, relatable to a ${grade}-year-old
-${quiz}
-- Footer: "Made with ClassAI"
+Links and buttons: every <a> tag must either point to a real URL (open in _blank) or use href="#" with a JavaScript onclick handler. No dead links. Every button click must do something visible.
 
-TECHNICAL:
-- Output ONLY complete HTML from <!DOCTYPE html> to </html>
-- CDN libraries welcome: Three.js, OrbitControls, GSAP, D3.js, anything you need
-- All other CSS and JS inline
-- Dark theme: background #060a14, cards #0f172a, text #e2e8f0, accent #7c3aed
-- Works on mobile (responsive)
-- Every single button, link, and interactive element must be wired up and functional
-- 100% accurate for Grade ${grade} ${subject}`
+⚠️ CRITICAL — this page runs inside a sandboxed iframe. ES modules and import maps silently break everything. You MUST use only these UMD/global CDN builds (copy these script tags exactly):
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+Never write <script type="module">, never use importmap, never use dynamic import().
 
-  const message = await anthropic.messages.create({
-    model: 'claude-sonnet-4-6',    // Sonnet for complex interactive HTML
-    max_tokens: 16000,              // Enough room for Three.js + full page
-    system: 'You are building interactive educational web pages. Output ONLY complete HTML. No markdown, no explanation, no code fences.',
-    messages: [{ role: 'user', content: prompt }],
-  })
+JavaScript reliability rules (failures here = blank/broken buttons):
+- Wrap ALL initialisation code in: document.addEventListener('DOMContentLoaded', function() { ... })
+- Every getElementById / querySelector must be null-checked before use
+- Every button click handler must be attached inside DOMContentLoaded, not inline
+- Never call a function before it is defined in the script
 
-  const block = message.content[0]
-  if (block.type !== 'text') throw new Error('Unexpected response type')
-  return stripCodeFences(block.text)
+Output ONLY the complete HTML document from <!DOCTYPE html> to </html>. Nothing before, nothing after.`
+
+  // Use streaming — required for long-running requests with large max_tokens
+  let text: string
+
+  if (PROVIDER === 'anthropic') {
+    const stream = anthropic.messages.stream({
+      model: 'claude-opus-5-5',
+      max_tokens: 64000,   // Increased — thinking blocks consume tokens before text output
+      system: 'You are an expert educational web developer. Output ONLY a complete HTML document. No markdown, no explanation, no code fences — just raw HTML starting with <!DOCTYPE html>.',
+      messages: [{ role: 'user', content: prompt }],
+    })
+    // Use finalMessage() — handles thinking blocks that newer models emit before text
+    const message = await stream.finalMessage()
+    text = message.content
+      .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+      .map(b => b.text)
+      .join('')
+    if (!text) throw new Error('Model returned no HTML — please try again')
+  } else {
+    // OpenAI fallback
+    const stream = await openai.chat.completions.create({
+      model: 'gpt-4.1',
+      max_tokens: 16384,
+      stream: true,
+      messages: [
+        { role: 'system', content: 'You are an expert educational web developer. Output ONLY a complete HTML document. No markdown, no explanation, no code fences — just raw HTML starting with <!DOCTYPE html>.' },
+        { role: 'user',   content: prompt },
+      ],
+    })
+    text = ''
+    for await (const chunk of stream) {
+      text += chunk.choices[0]?.delta?.content ?? ''
+    }
+  }
+
+  return stripCodeFences(text)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -188,20 +232,16 @@ export async function POST(req: NextRequest) {
         controller.enqueue(encoder.encode(sse(event, data)))
 
       try {
-        // Step 1: research (skip if teacher gave a specific instruction — trust it directly)
-        let research = ''
-        let webContext = ''
-        if (!teacherInstruction) {
-          send('status', { message: 'Figuring out the best approach for this topic…' })
-          ;[research, webContext] = await Promise.all([
-            researchTopic(topicTitle, subject, grade),
-            searchWeb(`${topicTitle} ${subject} interactive educational visualization grade ${grade}`),
-          ])
-          try {
-            const r = JSON.parse(research)
-            if (r.recommendedTech) send('status', { message: `Using ${r.recommendedTech} for this visual…` })
-          } catch { /* ignore */ }
-        }
+        // Step 1: always research — determines the best visual approach for this topic
+        send('status', { message: 'Figuring out the best approach for this topic…' })
+        const [research, webContext] = await Promise.all([
+          researchTopic(topicTitle, subject, grade),
+          searchWeb(`${topicTitle} ${subject} interactive educational visualization grade ${grade}`),
+        ])
+        try {
+          const r = JSON.parse(research)
+          if (r.recommendedTech) send('status', { message: `Using ${r.recommendedTech} for this visual…` })
+        } catch { /* ignore */ }
 
         // Step 2: generate
         send('status', { message: 'Building the interactive visual…' })

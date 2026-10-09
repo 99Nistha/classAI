@@ -11,9 +11,18 @@ export function assembleFinalLesson(
 }
 
 /**
- * Strips markdown code fences (```html / ```json / ``` etc.)
+ * Extracts a complete HTML document from a model response.
+ * Handles: bare HTML, code-fenced HTML, and HTML buried after prose.
  */
 export function stripCodeFences(text: string): string {
+  // Try extracting the HTML document directly (most robust)
+  const start = text.search(/<!doctype\s+html|<html[\s>]/i)
+  const end = text.lastIndexOf('</html>')
+  if (start !== -1 && end !== -1 && end > start) {
+    return text.slice(start, end + 7).trim()
+  }
+
+  // Fallback: strip code fences if present
   return text
     .replace(/^```[\w]*\s*/i, '')
     .replace(/\s*```\s*$/i, '')
